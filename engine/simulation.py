@@ -1,7 +1,7 @@
-# engine/simulation.py - Main simulation class
+# engine/simulation.py - Updated simulation class with real agents
 """
 SurvAIval Simulation Controller
-Manages the main simulation loop, events, and rendering
+Manages the main simulation loop, events, and rendering with real AI agents
 """
 
 import pygame
@@ -9,6 +9,7 @@ import random
 import sys
 import os
 import config
+from agents.rabbit import Rabbit
 
 
 class Simulation:
@@ -25,13 +26,24 @@ class Simulation:
         self.running = True
         self.paused = False
 
+        # Agent management
+        self.agents = []
+        self.dead_agents = []
+
+        # Statistics
+        self.stats = {
+            'total_born': 0,
+            'total_died': 0,
+            'generation': 1
+        }
+
         # Load assets
         self._load_assets()
 
-        # Initialize test data (temporary)
-        self._init_test_data()
+        # Initialize agents
+        self._create_initial_agents()
 
-        print("✅ Simulation initialized successfully!")
+        print("✅ Simulation initialized with real AI agents!")
 
     def _load_assets(self):
         """Load game assets (sprites, sounds, etc.)"""
@@ -50,7 +62,7 @@ class Simulation:
                 if os.path.exists(path):
                     image = pygame.image.load(path)
                     # Scale to appropriate size
-                    size = 32 if animal == 'rabbit' else 40
+                    size = 24 if animal == 'rabbit' else 32
                     self.assets[animal] = pygame.transform.scale(image, (size, size))
                     print(f"📁 Loaded {animal} sprite")
                 else:
@@ -60,25 +72,21 @@ class Simulation:
                 print(f"❌ Failed to load {animal}: {e}")
                 self.assets[animal] = None
 
-    def _init_test_data(self):
-        """Initialize temporary test data"""
-        # Test rabbits for demonstration
-        self.test_entities = []
+    def _create_initial_agents(self):
+        """Create initial population of agents"""
+        print("🌱 Creating initial population...")
 
-        for i in range(5):
-            x = random.randint(50, config.SCREEN_WIDTH - 50)
-            y = random.randint(50, config.SCREEN_HEIGHT - 50)
-            velocity_x = random.uniform(-1, 1)
-            velocity_y = random.uniform(-1, 1)
+        # Create rabbits
+        for i in range(config.INITIAL_RABBITS):
+            position = [
+                random.randint(50, config.SCREEN_WIDTH - 50),
+                random.randint(50, config.SCREEN_HEIGHT - 50)
+            ]
+            rabbit = Rabbit(position)
+            self.agents.append(rabbit)
+            self.stats['total_born'] += 1
 
-            entity = {
-                'type': 'rabbit',
-                'position': [x, y],
-                'velocity': [velocity_x, velocity_y],
-                'energy': 100,
-                'age': 0
-            }
-            self.test_entities.append(entity)
+        print(f"🐰 Created {len(self.agents)} rabbits")
 
     def handle_events(self):
         """Process input events"""
@@ -91,18 +99,8 @@ class Simulation:
                     self.running = False
 
                 elif event.key == pygame.K_SPACE:
-                    # Add new test rabbit
-                    x = random.randint(50, config.SCREEN_WIDTH - 50)
-                    y = random.randint(50, config.SCREEN_HEIGHT - 50)
-                    entity = {
-                        'type': 'rabbit',
-                        'position': [x, y],
-                        'velocity': [random.uniform(-1, 1), random.uniform(-1, 1)],
-                        'energy': 100,
-                        'age': 0
-                    }
-                    self.test_entities.append(entity)
-                    print(f"🐰 Added new rabbit! Total: {len(self.test_entities)}")
+                    # Add new rabbit
+                    self._add_random_rabbit()
 
                 elif event.key == pygame.K_p:
                     # Toggle pause
@@ -113,57 +111,81 @@ class Simulation:
                 elif event.key == pygame.K_r:
                     # Reset simulation
                     print("🔄 Resetting simulation...")
-                    self._init_test_data()
+                    self._reset_simulation()
+
+                elif event.key == pygame.K_d:
+                    # Toggle debug mode
+                    config.DEBUG_MODE = not getattr(config, 'DEBUG_MODE', False)
+                    status = "enabled" if config.DEBUG_MODE else "disabled"
+                    print(f"🐛 Debug mode {status}")
+
+    def _add_random_rabbit(self):
+        """Add a new rabbit at random position"""
+        position = [
+            random.randint(50, config.SCREEN_WIDTH - 50),
+            random.randint(50, config.SCREEN_HEIGHT - 50)
+        ]
+        rabbit = Rabbit(position)
+        self.agents.append(rabbit)
+        self.stats['total_born'] += 1
+        print(f"🐰 Added new rabbit! Total: {len(self.agents)}")
+
+    def _reset_simulation(self):
+        """Reset the simulation to initial state"""
+        self.agents.clear()
+        self.dead_agents.clear()
+        self.stats = {
+            'total_born': 0,
+            'total_died': 0,
+            'generation': 1
+        }
+        self._create_initial_agents()
 
     def update(self):
         """Update simulation state"""
         if self.paused:
             return
 
-        # Update test entities
-        for entity in self.test_entities[:]:  # Copy list to avoid modification issues
-            # Simple movement
-            entity['position'][0] += entity['velocity'][0]
-            entity['position'][1] += entity['velocity'][1]
+        # Update all agents
+        for agent in self.agents[:]:  # Copy list to avoid modification issues
+            agent.update(self)
 
-            # Bounce off screen edges
-            if entity['position'][0] <= 0 or entity['position'][0] >= config.SCREEN_WIDTH:
-                entity['velocity'][0] *= -1
-            if entity['position'][1] <= 0 or entity['position'][1] >= config.SCREEN_HEIGHT:
-                entity['velocity'][1] *= -1
+            # Remove dead agents
+            if not agent.is_alive:
+                self.agents.remove(agent)
+                self.dead_agents.append(agent)
+                self.stats['total_died'] += 1
 
-            # Keep within bounds
-            entity['position'][0] = max(16, min(config.SCREEN_WIDTH - 16, entity['position'][0]))
-            entity['position'][1] = max(16, min(config.SCREEN_HEIGHT - 16, entity['position'][1]))
-
-            # Add small random movement
-            entity['velocity'][0] += random.uniform(-0.1, 0.1)
-            entity['velocity'][1] += random.uniform(-0.1, 0.1)
-
-            # Limit speed
-            max_speed = 2.0
-            speed = (entity['velocity'][0] ** 2 + entity['velocity'][1] ** 2) ** 0.5
-            if speed > max_speed:
-                entity['velocity'][0] = entity['velocity'][0] / speed * max_speed
-                entity['velocity'][1] = entity['velocity'][1] / speed * max_speed
-
-            # Age and energy
-            entity['age'] += 1
-            entity['energy'] -= 0.01
+        # Handle population extinction
+        if len(self.agents) == 0:
+            print("💀 Population extinct! Restarting...")
+            self._create_initial_agents()
 
     def render(self):
         """Render the simulation"""
         # Clear screen with grass color
         self.screen.fill(config.GREEN)
 
+        # Render agents
+        self._render_agents()
+
         # Render UI
         self._render_ui()
 
-        # Render entities
-        self._render_entities()
-
         # Update display
         pygame.display.flip()
+
+    def _render_agents(self):
+        """Render all agents in the simulation"""
+        for agent in self.agents:
+            # Try to use sprite asset first
+            if self.assets.get(agent.agent_type):
+                sprite = self.assets[agent.agent_type]
+                sprite_rect = sprite.get_rect(center=(int(agent.position[0]), int(agent.position[1])))
+                self.screen.blit(sprite, sprite_rect)
+            else:
+                # Use agent's own draw method (fallback to circles)
+                agent.draw(self.screen)
 
     def _render_ui(self):
         """Render user interface elements"""
@@ -173,14 +195,13 @@ class Simulation:
 
         # Title
         title = font_large.render("SurvAIval - AI Ecosystem", True, config.WHITE)
-        title_rect = title.get_rect()
-        title_rect.topleft = (10, 10)
-        self.screen.blit(title, title_rect)
+        self.screen.blit(title, (10, 10))
 
         # Controls
         controls = [
             "SPACE: Add rabbit",
             "P: Pause/Resume",
+            "D: Toggle debug",
             "R: Reset",
             "ESC: Exit"
         ]
@@ -189,56 +210,60 @@ class Simulation:
         for control in controls:
             text = font_small.render(control, True, config.WHITE)
             self.screen.blit(text, (10, y_offset))
-            y_offset += 20
+            y_offset += 18
 
         # Statistics
+        alive_rabbits = len([a for a in self.agents if a.agent_type == 'rabbit'])
+
         stats = [
-            f"Entities: {len(self.test_entities)}",
+            f"Population: {len(self.agents)}",
+            f"Rabbits: {alive_rabbits}",
+            f"Total Born: {self.stats['total_born']}",
+            f"Total Died: {self.stats['total_died']}",
             f"FPS: {int(self.clock.get_fps())}",
             f"Status: {'PAUSED' if self.paused else 'RUNNING'}"
         ]
 
-        y_offset = 150
+        # Display on right side of screen
+        x_pos = config.SCREEN_WIDTH - 200
+        y_offset = 50
+
+        # Background for stats
+        stats_bg = pygame.Surface((180, len(stats) * 22 + 10))
+        stats_bg.set_alpha(128)
+        stats_bg.fill(config.BLACK)
+        self.screen.blit(stats_bg, (x_pos - 10, y_offset - 5))
+
         for stat in stats:
             text = font_medium.render(stat, True, config.WHITE)
-            self.screen.blit(text, (10, y_offset))
-            y_offset += 25
+            self.screen.blit(text, (x_pos, y_offset))
+            y_offset += 22
 
-    def _render_entities(self):
-        """Render all entities in the simulation"""
-        for entity in self.test_entities:
-            pos = (int(entity['position'][0]), int(entity['position'][1]))
-            entity_type = entity['type']
+        # Agent state information (if debug mode)
+        if getattr(config, 'DEBUG_MODE', False):
+            self._render_debug_info()
 
-            # Try to use sprite asset first
-            if self.assets.get(entity_type):
-                sprite = self.assets[entity_type]
-                sprite_rect = sprite.get_rect(center=pos)
-                self.screen.blit(sprite, sprite_rect)
-            else:
-                # Fallback to colored circles
-                color = getattr(config, f"{entity_type.upper()}_COLOR", config.WHITE)
-                pygame.draw.circle(self.screen, color, pos, 16)
-                pygame.draw.circle(self.screen, config.BLACK, pos, 16, 2)
+    def _render_debug_info(self):
+        """Render debug information about agents"""
+        font_small = pygame.font.Font(None, 16)
 
-            # Energy bar (optional)
-            if entity['energy'] < 50:
-                bar_width = 30
-                bar_height = 4
-                bar_x = pos[0] - bar_width // 2
-                bar_y = pos[1] - 25
+        # Count agents by state
+        state_counts = {}
+        for agent in self.agents:
+            state = getattr(agent, 'current_state', 'unknown')
+            state_counts[state] = state_counts.get(state, 0) + 1
 
-                # Background
-                pygame.draw.rect(self.screen, config.BLACK, (bar_x - 1, bar_y - 1, bar_width + 2, bar_height + 2))
-                # Energy level
-                energy_width = int(bar_width * (entity['energy'] / 100))
-                energy_color = config.GREEN if entity['energy'] > 25 else (255, 0, 0)  # Red when low
-                pygame.draw.rect(self.screen, energy_color, (bar_x, bar_y, energy_width, bar_height))
+        # Display state counts
+        y_offset = 200
+        for state, count in state_counts.items():
+            text = font_small.render(f"{state}: {count}", True, config.WHITE)
+            self.screen.blit(text, (config.SCREEN_WIDTH - 150, y_offset))
+            y_offset += 18
 
     def run(self):
         """Main simulation loop"""
-        print("🚀 Starting simulation loop...")
-        print("📝 Controls: SPACE=Add rabbit, P=Pause, R=Reset, ESC=Exit")
+        print("🚀 Starting simulation loop with AI agents...")
+        print("📝 Controls: SPACE=Add rabbit, P=Pause, D=Debug, R=Reset, ESC=Exit")
 
         while self.running:
             # Handle events
@@ -254,3 +279,38 @@ class Simulation:
             self.clock.tick(config.FPS)
 
         print("✅ Simulation loop ended")
+
+    # Helper methods for agents
+    def get_entities_in_range(self, position, range_distance):
+        """Get all entities within range of a position
+
+        Args:
+            position: Center position [x, y]
+            range_distance: Search radius
+
+        Returns:
+            List of agents within range
+        """
+        nearby = []
+
+        for agent in self.agents:
+            if not agent.is_alive:
+                continue
+
+            distance = ((position[0] - agent.position[0]) ** 2 +
+                        (position[1] - agent.position[1]) ** 2) ** 0.5
+
+            if distance <= range_distance:
+                nearby.append(agent)
+
+        return nearby
+
+    def add_entity(self, agent):
+        """Add a new agent to the simulation (used for reproduction)"""
+        self.agents.append(agent)
+        self.stats['total_born'] += 1
+        print(f"🌱 New {agent.agent_type} added to simulation!")
+
+    def get_agent_count_by_type(self, agent_type):
+        """Get count of agents by type"""
+        return len([a for a in self.agents if a.agent_type == agent_type and a.is_alive])
