@@ -92,4 +92,4 @@ This project demonstrates:
 
 This is a personal portfolio project, but feedback and suggestions are welcome!
 
-- Anil Duman
+- *Anil Duman*
