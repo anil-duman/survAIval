@@ -37,7 +37,7 @@ SurvAIval is a multi-agent artificial intelligence simulation built from scratch
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/survAIval.git
+git clone https://github.com/anil-duman/survAIval.git
 cd survAIval
 
 # Install dependencies
