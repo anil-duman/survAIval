@@ -1,7 +1,7 @@
-# engine/simulation.py - Updated simulation class with real agents
+# engine/simulation.py - Simulation with food system integration
 """
 SurvAIval Simulation Controller
-Manages the main simulation loop, events, and rendering with real AI agents
+Now includes food system for herbivore feeding
 """
 
 import pygame
@@ -10,6 +10,7 @@ import sys
 import os
 import config
 from agents.rabbit import Rabbit
+from environment.food_system import FoodManager
 
 
 class Simulation:
@@ -30,6 +31,10 @@ class Simulation:
         self.agents = []
         self.dead_agents = []
 
+        # Food system
+        self.food_manager = FoodManager()
+        self.food_manager.initialize_food_sources(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+
         # Statistics
         self.stats = {
             'total_born': 0,
@@ -43,7 +48,7 @@ class Simulation:
         # Initialize agents
         self._create_initial_agents()
 
-        print("✅ Simulation initialized with real AI agents!")
+        print("✅ Simulation initialized with AI agents and food system!")
 
     def _load_assets(self):
         """Load game assets (sprites, sounds, etc.)"""
@@ -61,7 +66,6 @@ class Simulation:
             try:
                 if os.path.exists(path):
                     image = pygame.image.load(path)
-                    # Scale to appropriate size
                     size = 24 if animal == 'rabbit' else 32
                     self.assets[animal] = pygame.transform.scale(image, (size, size))
                     print(f"📁 Loaded {animal} sprite")
@@ -99,25 +103,29 @@ class Simulation:
                     self.running = False
 
                 elif event.key == pygame.K_SPACE:
-                    # Add new rabbit
                     self._add_random_rabbit()
 
                 elif event.key == pygame.K_p:
-                    # Toggle pause
                     self.paused = not self.paused
                     status = "paused" if self.paused else "resumed"
                     print(f"⏸️ Simulation {status}")
 
                 elif event.key == pygame.K_r:
-                    # Reset simulation
                     print("🔄 Resetting simulation...")
                     self._reset_simulation()
 
                 elif event.key == pygame.K_d:
-                    # Toggle debug mode
                     config.DEBUG_MODE = not getattr(config, 'DEBUG_MODE', False)
                     status = "enabled" if config.DEBUG_MODE else "disabled"
                     print(f"🐛 Debug mode {status}")
+
+                elif event.key == pygame.K_f:
+                    # Manually spawn food
+                    mouse_pos = pygame.mouse.get_pos()
+                    from environment.food_system import FoodSource
+                    food = FoodSource(mouse_pos, "grass")
+                    self.food_manager.food_sources.append(food)
+                    print(f"🌱 Spawned grass at mouse position")
 
     def _add_random_rabbit(self):
         """Add a new rabbit at random position"""
@@ -134,6 +142,8 @@ class Simulation:
         """Reset the simulation to initial state"""
         self.agents.clear()
         self.dead_agents.clear()
+        self.food_manager = FoodManager()
+        self.food_manager.initialize_food_sources(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
         self.stats = {
             'total_born': 0,
             'total_died': 0,
@@ -146,8 +156,11 @@ class Simulation:
         if self.paused:
             return
 
+        # Update food system
+        self.food_manager.update(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+
         # Update all agents
-        for agent in self.agents[:]:  # Copy list to avoid modification issues
+        for agent in self.agents[:]:
             agent.update(self)
 
             # Remove dead agents
@@ -166,6 +179,9 @@ class Simulation:
         # Clear screen with grass color
         self.screen.fill(config.GREEN)
 
+        # Render food sources (below agents)
+        self.food_manager.draw_all(self.screen)
+
         # Render agents
         self._render_agents()
 
@@ -178,13 +194,11 @@ class Simulation:
     def _render_agents(self):
         """Render all agents in the simulation"""
         for agent in self.agents:
-            # Try to use sprite asset first
             if self.assets.get(agent.agent_type):
                 sprite = self.assets[agent.agent_type]
                 sprite_rect = sprite.get_rect(center=(int(agent.position[0]), int(agent.position[1])))
                 self.screen.blit(sprite, sprite_rect)
             else:
-                # Use agent's own draw method (fallback to circles)
                 agent.draw(self.screen)
 
     def _render_ui(self):
@@ -200,6 +214,7 @@ class Simulation:
         # Controls
         controls = [
             "SPACE: Add rabbit",
+            "F: Spawn food (at mouse)",
             "P: Pause/Resume",
             "D: Toggle debug",
             "R: Reset",
@@ -212,32 +227,40 @@ class Simulation:
             self.screen.blit(text, (10, y_offset))
             y_offset += 18
 
-        # Statistics
+        # Get statistics
         alive_rabbits = len([a for a in self.agents if a.agent_type == 'rabbit'])
+        food_stats = self.food_manager.get_statistics()
 
         stats = [
             f"Population: {len(self.agents)}",
             f"Rabbits: {alive_rabbits}",
+            f"",
+            f"Food Sources: {food_stats['available_food']}/{food_stats['total_food_sources']}",
+            f"Grass: {food_stats.get('grass_count', 0)}",
+            f"Berries: {food_stats.get('berry_count', 0)}",
+            f"",
             f"Total Born: {self.stats['total_born']}",
             f"Total Died: {self.stats['total_died']}",
+            f"",
             f"FPS: {int(self.clock.get_fps())}",
             f"Status: {'PAUSED' if self.paused else 'RUNNING'}"
         ]
 
-        # Display on right side of screen
-        x_pos = config.SCREEN_WIDTH - 200
+        # Display on right side
+        x_pos = config.SCREEN_WIDTH - 220
         y_offset = 50
 
         # Background for stats
-        stats_bg = pygame.Surface((180, len(stats) * 22 + 10))
+        stats_bg = pygame.Surface((210, len(stats) * 20 + 10))
         stats_bg.set_alpha(128)
         stats_bg.fill(config.BLACK)
         self.screen.blit(stats_bg, (x_pos - 10, y_offset - 5))
 
         for stat in stats:
-            text = font_medium.render(stat, True, config.WHITE)
-            self.screen.blit(text, (x_pos, y_offset))
-            y_offset += 22
+            if stat:  # Skip empty lines in rendering
+                text = font_medium.render(stat, True, config.WHITE)
+                self.screen.blit(text, (x_pos, y_offset))
+            y_offset += 20
 
         # Agent state information (if debug mode)
         if getattr(config, 'DEBUG_MODE', False):
@@ -254,43 +277,40 @@ class Simulation:
             state_counts[state] = state_counts.get(state, 0) + 1
 
         # Display state counts
-        y_offset = 200
+        y_offset = config.SCREEN_HEIGHT - 150
+
+        # Background
+        debug_bg = pygame.Surface((180, len(state_counts) * 18 + 20))
+        debug_bg.set_alpha(128)
+        debug_bg.fill(config.BLACK)
+        self.screen.blit(debug_bg, (config.SCREEN_WIDTH - 190, y_offset - 10))
+
+        # Title
+        title = font_small.render("Agent States:", True, config.WHITE)
+        self.screen.blit(title, (config.SCREEN_WIDTH - 180, y_offset))
+        y_offset += 20
+
         for state, count in state_counts.items():
             text = font_small.render(f"{state}: {count}", True, config.WHITE)
-            self.screen.blit(text, (config.SCREEN_WIDTH - 150, y_offset))
+            self.screen.blit(text, (config.SCREEN_WIDTH - 170, y_offset))
             y_offset += 18
 
     def run(self):
         """Main simulation loop"""
-        print("🚀 Starting simulation loop with AI agents...")
-        print("📝 Controls: SPACE=Add rabbit, P=Pause, D=Debug, R=Reset, ESC=Exit")
+        print("🚀 Starting simulation with food system...")
+        print("📝 Controls: SPACE=Rabbit, F=Food, P=Pause, D=Debug, R=Reset, ESC=Exit")
 
         while self.running:
-            # Handle events
             self.handle_events()
-
-            # Update simulation
             self.update()
-
-            # Render
             self.render()
-
-            # Control frame rate
             self.clock.tick(config.FPS)
 
         print("✅ Simulation loop ended")
 
     # Helper methods for agents
     def get_entities_in_range(self, position, range_distance):
-        """Get all entities within range of a position
-
-        Args:
-            position: Center position [x, y]
-            range_distance: Search radius
-
-        Returns:
-            List of agents within range
-        """
+        """Get all entities within range of a position"""
         nearby = []
 
         for agent in self.agents:
@@ -306,7 +326,7 @@ class Simulation:
         return nearby
 
     def add_entity(self, agent):
-        """Add a new agent to the simulation (used for reproduction)"""
+        """Add a new agent to the simulation"""
         self.agents.append(agent)
         self.stats['total_born'] += 1
         print(f"🌱 New {agent.agent_type} added to simulation!")
