@@ -1,7 +1,7 @@
-# engine/simulation.py - Simulation with wolves
+# engine/simulation.py - Simulation with animations fixed
 """
 SurvAIval Simulation Controller
-Now includes predator-prey dynamics with wolves
+Complete version with animation system properly integrated
 """
 
 import pygame
@@ -12,6 +12,7 @@ import config
 from agents.rabbit import Rabbit
 from agents.wolf import Wolf
 from environment.food_system import FoodManager
+from utils.animation import init_animations, get_animation_manager
 
 
 class Simulation:
@@ -36,6 +37,10 @@ class Simulation:
         self.food_manager = FoodManager()
         self.food_manager.initialize_food_sources(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
 
+        # Animation system - CRITICAL: Load before creating agents
+        print("🎬 Initializing animation system...")
+        self.animation_manager = init_animations()
+
         # Statistics
         self.stats = {
             'total_born': 0,
@@ -45,69 +50,54 @@ class Simulation:
             'wolves_starved': 0
         }
 
-        # Load assets
-        self._load_assets()
-
-        # Initialize agents
+        # Initialize agents AFTER animation system
         self._create_initial_agents()
 
-        print("✅ Simulation initialized with predator-prey ecosystem!")
-
-    def _load_assets(self):
-        """Load game assets (sprites, sounds, etc.)"""
-        self.assets = {}
-
-        # Try to load animal sprites
-        asset_paths = {
-            'rabbit': 'assets/animals/rabbit.png',
-            'deer': 'assets/animals/deer.png',
-            'wolf': 'assets/animals/wolf.png',
-            'bear': 'assets/animals/bear.png'
-        }
-
-        for animal, path in asset_paths.items():
-            try:
-                if os.path.exists(path):
-                    image = pygame.image.load(path)
-                    size = 24 if animal == 'rabbit' else 32 if animal == 'wolf' else 36
-                    self.assets[animal] = pygame.transform.scale(image, (size, size))
-                    print(f"📁 Loaded {animal} sprite")
-                else:
-                    self.assets[animal] = None
-                    print(f"⚠️ Asset not found: {path}")
-            except Exception as e:
-                print(f"❌ Failed to load {animal}: {e}")
-                self.assets[animal] = None
+        print("✅ Simulation initialized with animated predator-prey ecosystem!")
 
     def _create_initial_agents(self):
-        """Create initial population of agents"""
+        """Create initial population of agents with animations"""
         print("🌱 Creating initial ecosystem...")
 
-        # Create rabbits
+        # Get animation manager
+        anim_mgr = get_animation_manager()
+
+        # Create rabbits with animations
         for i in range(config.INITIAL_RABBITS):
-            position = [
+            pos = [
                 random.randint(50, config.SCREEN_WIDTH - 50),
                 random.randint(50, config.SCREEN_HEIGHT - 50)
             ]
-            rabbit = Rabbit(position)
+            rabbit = Rabbit(pos)
+
+            # Assign animated sprite
+            rabbit_anim = anim_mgr.get_sprite('rabbit')
+            if rabbit_anim:
+                rabbit.set_animated_sprite(rabbit_anim)
+
             self.agents.append(rabbit)
             self.stats['total_born'] += 1
 
-        # Create wolves
+        # Create wolves with animations
         for i in range(config.INITIAL_WOLVES):
-            # Spawn wolves away from rabbit clusters
-            position = [
+            pos = [
                 random.randint(100, config.SCREEN_WIDTH - 100),
                 random.randint(100, config.SCREEN_HEIGHT - 100)
             ]
-            wolf = Wolf(position)
+            wolf = Wolf(pos)
+
+            # Assign animated sprite
+            wolf_anim = anim_mgr.get_sprite('wolf')
+            if wolf_anim:
+                wolf.set_animated_sprite(wolf_anim)
+
             self.agents.append(wolf)
             self.stats['total_born'] += 1
 
         rabbits = len([a for a in self.agents if a.agent_type == 'rabbit'])
         wolves = len([a for a in self.agents if a.agent_type == 'wolf'])
-        print(f"🐰 Created {rabbits} rabbits")
-        print(f"🐺 Created {wolves} wolves")
+        print(f"🐰 Created {rabbits} animated rabbits")
+        print(f"🐺 Created {wolves} animated wolves")
 
     def handle_events(self):
         """Process input events"""
@@ -123,7 +113,6 @@ class Simulation:
                     self._add_random_rabbit()
 
                 elif event.key == pygame.K_w:
-                    # Add wolf with W key
                     self._add_random_wolf()
 
                 elif event.key == pygame.K_p:
@@ -141,7 +130,6 @@ class Simulation:
                     print(f"🐛 Debug mode {status}")
 
                 elif event.key == pygame.K_f:
-                    # Spawn food at mouse position
                     mouse_pos = pygame.mouse.get_pos()
                     from environment.food_system import FoodSource
                     food = FoodSource(mouse_pos, "grass")
@@ -149,26 +137,40 @@ class Simulation:
                     print(f"🌱 Spawned grass at mouse position")
 
     def _add_random_rabbit(self):
-        """Add a new rabbit at random position"""
-        position = [
+        """Add a new rabbit with animation"""
+        pos = [
             random.randint(50, config.SCREEN_WIDTH - 50),
             random.randint(50, config.SCREEN_HEIGHT - 50)
         ]
-        rabbit = Rabbit(position)
+        rabbit = Rabbit(pos)
+
+        # Assign animated sprite
+        anim_mgr = get_animation_manager()
+        rabbit_anim = anim_mgr.get_sprite('rabbit')
+        if rabbit_anim:
+            rabbit.set_animated_sprite(rabbit_anim)
+
         self.agents.append(rabbit)
         self.stats['total_born'] += 1
-        print(f"🐰 Added new rabbit! Total rabbits: {self.get_agent_count_by_type('rabbit')}")
+        print(f"🐰 Added new rabbit! Total: {self.get_agent_count_by_type('rabbit')}")
 
     def _add_random_wolf(self):
-        """Add a new wolf at random position"""
-        position = [
+        """Add a new wolf with animation"""
+        pos = [
             random.randint(100, config.SCREEN_WIDTH - 100),
             random.randint(100, config.SCREEN_HEIGHT - 100)
         ]
-        wolf = Wolf(position)
+        wolf = Wolf(pos)
+
+        # Assign animated sprite
+        anim_mgr = get_animation_manager()
+        wolf_anim = anim_mgr.get_sprite('wolf')
+        if wolf_anim:
+            wolf.set_animated_sprite(wolf_anim)
+
         self.agents.append(wolf)
         self.stats['total_born'] += 1
-        print(f"🐺 Added new wolf! Total wolves: {self.get_agent_count_by_type('wolf')}")
+        print(f"🐺 Added new wolf! Total: {self.get_agent_count_by_type('wolf')}")
 
     def _reset_simulation(self):
         """Reset the simulation to initial state"""
@@ -190,6 +192,9 @@ class Simulation:
         if self.paused:
             return
 
+        # Update animation system - IMPORTANT
+        self.animation_manager.update_all()
+
         # Update food system
         self.food_manager.update(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
 
@@ -197,16 +202,13 @@ class Simulation:
         for agent in self.agents[:]:
             agent.update(self)
 
-            # Track death causes for statistics
             if not agent.is_alive:
                 self.agents.remove(agent)
                 self.dead_agents.append(agent)
                 self.stats['total_died'] += 1
 
-                # Track specific death causes
-                if agent.agent_type == 'rabbit' and hasattr(agent, 'current_state'):
-                    if agent.current_state == "dead":
-                        self.stats['rabbits_eaten'] += 1
+                if agent.agent_type == 'rabbit':
+                    self.stats['rabbits_eaten'] += 1
                 elif agent.agent_type == 'wolf':
                     self.stats['wolves_starved'] += 1
 
@@ -214,54 +216,43 @@ class Simulation:
         rabbit_count = self.get_agent_count_by_type('rabbit')
         wolf_count = self.get_agent_count_by_type('wolf')
 
-        # If rabbits extinct, respawn some
         if rabbit_count == 0:
             print("💀 Rabbits extinct! Adding new population...")
             for _ in range(5):
                 self._add_random_rabbit()
 
-        # If wolves extinct and rabbits overpopulated, add wolves
         if wolf_count == 0 and rabbit_count > 15:
-            print("🐺 Reintroducing wolves to control rabbit population...")
+            print("🐺 Reintroducing wolves...")
             self._add_random_wolf()
 
     def render(self):
         """Render the simulation"""
-        # Clear screen with grass color
         self.screen.fill(config.GREEN)
 
-        # Render food sources (below agents)
+        # Render food sources
         self.food_manager.draw_all(self.screen)
 
-        # Render agents (herbivores first, then predators on top)
+        # Render agents (herbivores first, then predators)
         herbivores = [a for a in self.agents if a.agent_type in ['rabbit', 'deer']]
         predators = [a for a in self.agents if a.agent_type in ['wolf', 'bear']]
 
         for agent in herbivores + predators:
-            if self.assets.get(agent.agent_type):
-                sprite = self.assets[agent.agent_type]
-                sprite_rect = sprite.get_rect(center=(int(agent.position[0]), int(agent.position[1])))
-                self.screen.blit(sprite, sprite_rect)
-            else:
-                agent.draw(self.screen)
+            agent.draw(self.screen)
 
         # Render UI
         self._render_ui()
 
-        # Update display
         pygame.display.flip()
 
     def _render_ui(self):
-        """Render user interface elements"""
+        """Render user interface"""
         font_large = pygame.font.Font(None, 36)
         font_medium = pygame.font.Font(None, 24)
         font_small = pygame.font.Font(None, 20)
 
-        # Title
         title = font_large.render("SurvAIval - AI Ecosystem", True, config.WHITE)
         self.screen.blit(title, (10, 10))
 
-        # Controls
         controls = [
             "SPACE: Add rabbit",
             "W: Add wolf",
@@ -278,21 +269,20 @@ class Simulation:
             self.screen.blit(text, (10, y_offset))
             y_offset += 18
 
-        # Get statistics
+        # Statistics
         rabbit_count = self.get_agent_count_by_type('rabbit')
         wolf_count = self.get_agent_count_by_type('wolf')
         food_stats = self.food_manager.get_statistics()
 
-        # Calculate ratio
         if wolf_count > 0:
-            prey_predator_ratio = rabbit_count / wolf_count
+            ratio = rabbit_count / wolf_count
         else:
-            prey_predator_ratio = rabbit_count
+            ratio = rabbit_count
 
         stats = [
             f"🐰 Rabbits: {rabbit_count}",
             f"🐺 Wolves: {wolf_count}",
-            f"Ratio: {prey_predator_ratio:.1f}:1",
+            f"Ratio: {ratio:.1f}:1",
             "",
             f"🌱 Food: {food_stats['available_food']}/{food_stats['total_food_sources']}",
             f"Grass: {food_stats.get('grass_count', 0)}",
@@ -306,11 +296,9 @@ class Simulation:
             f"Status: {'PAUSED' if self.paused else 'RUNNING'}"
         ]
 
-        # Display on right side
         x_pos = config.SCREEN_WIDTH - 220
         y_offset = 50
 
-        # Background for stats
         stats_bg = pygame.Surface((210, len(stats) * 20 + 10))
         stats_bg.set_alpha(128)
         stats_bg.fill(config.BLACK)
@@ -322,15 +310,13 @@ class Simulation:
                 self.screen.blit(text, (x_pos, y_offset))
             y_offset += 20
 
-        # Agent state information (if debug mode)
         if getattr(config, 'DEBUG_MODE', False):
             self._render_debug_info()
 
     def _render_debug_info(self):
-        """Render debug information about agents"""
+        """Render debug information"""
         font_small = pygame.font.Font(None, 16)
 
-        # Count agents by state
         state_counts = {}
         for agent in self.agents:
             state = getattr(agent, 'current_state', 'unknown')
@@ -338,16 +324,13 @@ class Simulation:
             key = f"{agent_type}: {state}"
             state_counts[key] = state_counts.get(key, 0) + 1
 
-        # Display state counts
         y_offset = config.SCREEN_HEIGHT - (len(state_counts) * 18 + 30)
 
-        # Background
         debug_bg = pygame.Surface((200, len(state_counts) * 18 + 25))
         debug_bg.set_alpha(128)
         debug_bg.fill(config.BLACK)
         self.screen.blit(debug_bg, (config.SCREEN_WIDTH - 210, y_offset - 10))
 
-        # Title
         title = font_small.render("Agent States:", True, config.WHITE)
         self.screen.blit(title, (config.SCREEN_WIDTH - 200, y_offset))
         y_offset += 20
@@ -359,7 +342,7 @@ class Simulation:
 
     def run(self):
         """Main simulation loop"""
-        print("🚀 Starting predator-prey simulation...")
+        print("🚀 Starting animated predator-prey simulation...")
         print("📝 Controls: SPACE=Rabbit, W=Wolf, F=Food, P=Pause, D=Debug, R=Reset")
 
         while self.running:
@@ -368,11 +351,11 @@ class Simulation:
             self.render()
             self.clock.tick(config.FPS)
 
-        print("✅ Simulation loop ended")
+        print("✅ Simulation ended")
 
-    # Helper methods for agents
+    # Helper methods
     def get_entities_in_range(self, position, range_distance):
-        """Get all entities within range of a position"""
+        """Get all entities within range"""
         nearby = []
 
         for agent in self.agents:
@@ -389,10 +372,16 @@ class Simulation:
 
     def add_entity(self, agent):
         """Add a new agent to the simulation"""
+        # Assign animation if available
+        anim_mgr = get_animation_manager()
+        sprite = anim_mgr.get_sprite(agent.agent_type)
+        if sprite:
+            agent.set_animated_sprite(sprite)
+
         self.agents.append(agent)
         self.stats['total_born'] += 1
         print(f"🌱 New {agent.agent_type} added!")
 
     def get_agent_count_by_type(self, agent_type):
         """Get count of agents by type"""
-        return len([a for a in self.agents if a.agent_type == agent_type and a.is_alive])A
+        return len([a for a in self.agents if a.agent_type == agent_type and a.is_alive])

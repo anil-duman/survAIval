@@ -1,9 +1,10 @@
-# agents/rabbit.py - Updated rabbit with food system integration
+# agents/rabbit.py - Rabbit with animation support
 """
 SurvAIval Rabbit Agent
-Herbivore agent with food-seeking behavior and survival instincts
+Herbivore agent with animated sprites
 """
 
+import pygame
 import numpy as np
 import random
 from agents.base_agent import BaseAgent
@@ -11,7 +12,7 @@ import config
 
 
 class Rabbit(BaseAgent):
-    """Rabbit agent - Herbivore that seeks food and flees from predators"""
+    """Rabbit agent - Herbivore with survival instincts and animations"""
 
     def __init__(self, position):
         """Initialize rabbit agent
@@ -29,9 +30,9 @@ class Rabbit(BaseAgent):
         self.energy_drain_rate = 0.03
 
         # Behavioral parameters
-        self.fear_distance = 80.0  # Distance to start fleeing from predators
-        self.food_search_radius = 150.0  # How far to look for food
-        self.eating_distance = 15.0  # Distance needed to eat food
+        self.fear_distance = 80.0
+        self.food_search_radius = 150.0
+        self.eating_distance = 15.0
         self.wander_strength = 0.2
         self.flee_strength = 1.0
 
@@ -45,96 +46,148 @@ class Rabbit(BaseAgent):
         self.target_food = None
         self.eating_timer = 0
 
+        # Animation state
+        self.animated_sprite = None
+        self.facing_right = True
+        self.last_velocity = np.array([1.0, 0.0])
+
+    def set_animated_sprite(self, animated_sprite):
+        """Set the animated sprite for this rabbit
+
+        Args:
+            animated_sprite: AnimatedSprite instance from animation manager
+        """
+        self.animated_sprite = animated_sprite
+
     def get_color(self):
-        """Return rabbit display color"""
+        """Return rabbit display color (fallback when no sprite)"""
         if self.panic_timer > 0:
-            return (255, 150, 150)  # Light red when panicking
+            return (255, 150, 150)
         elif self.eating_timer > 0:
-            return (255, 220, 180)  # Orange when eating
+            return (255, 220, 180)
         elif self.energy < 30:
-            return (200, 150, 150)  # Pale when low energy
+            return (200, 150, 150)
         else:
             return config.RABBIT_COLOR
 
     def decide_action(self, world_state):
-        """AI decision making for rabbit behavior
-
-        Args:
-            world_state: Dictionary with world information
-
-        Returns:
-            Action dictionary
-        """
+        """AI decision making for rabbit behavior"""
         # Update timers
         if self.panic_timer > 0:
             self.panic_timer -= 1
         if self.eating_timer > 0:
             self.eating_timer -= 1
 
-        # Priority 1: FLEE from predators (highest priority)
+        # Priority 1: FLEE from predators
         nearest_predator = self._find_nearest_predator(world_state['predators'])
         if nearest_predator:
             distance = np.linalg.norm(nearest_predator.position - self.position)
             if distance < self.fear_distance:
-                self.panic_timer = 60  # Panic for 1 second
-                self.target_food = None  # Forget about food when scared
+                self.panic_timer = 60
+                self.target_food = None
                 self.current_state = "fleeing"
+
+                # Update animation to walk (running animation)
+                if self.animated_sprite:
+                    self.animated_sprite.play_animation('walk')
+
                 return {
                     'type': 'flee',
                     'threat_position': nearest_predator.position,
                     'urgency': 1.0 - (distance / self.fear_distance)
                 }
 
-        # Priority 2: Seek and eat food (when energy is low or moderately low)
+        # Priority 2: Seek and eat food
         if self.energy < 70:
-            # Check if we're already near food and can eat
             nearby_food = self._get_nearby_food(world_state)
 
             if nearby_food:
-                closest_food = nearby_food[0]  # Already sorted by distance
+                closest_food = nearby_food[0]
                 distance_to_food = closest_food['distance']
 
-                # If close enough to eat
                 if distance_to_food < self.eating_distance:
                     self.current_state = "eating"
                     self.eating_timer = 30
+
+                    # Update animation to idle when eating
+                    if self.animated_sprite:
+                        self.animated_sprite.play_animation('idle')
+
                     return {
                         'type': 'eat',
                         'food_position': closest_food['position']
                     }
-
-                # Otherwise, move towards food
                 else:
                     self.target_food = closest_food
                     self.current_state = "seeking_food"
+
+                    # Walking animation
+                    if self.animated_sprite:
+                        self.animated_sprite.play_animation('walk')
+
                     return {
                         'type': 'seek',
                         'target_position': closest_food['position']
                     }
 
-        # Priority 3: Reproduction (when energy is high)
+        # Priority 3: Reproduction
         if (self.energy > self.min_reproduction_energy and
                 self.reproduction_cooldown == 0):
             potential_mate = self._find_mate(world_state['same_species'])
             if potential_mate:
                 distance = np.linalg.norm(potential_mate.position - self.position)
-                if distance < 30:  # Close enough to attempt reproduction
+                if distance < 30:
                     self.current_state = "reproducing"
+
+                    if self.animated_sprite:
+                        self.animated_sprite.play_animation('idle')
+
                     return {
                         'type': 'reproduce',
                         'partner': potential_mate
                     }
                 else:
-                    # Move towards potential mate
                     self.current_state = "seeking_mate"
+
+                    if self.animated_sprite:
+                        self.animated_sprite.play_animation('walk')
+
                     return {
                         'type': 'seek',
                         'target_position': potential_mate.position
                     }
 
-        # Default: Wander around
+        # Default: Wander
         self.current_state = "wandering"
+
+        # Idle or walk animation based on movement
+        if self.animated_sprite:
+            speed = np.linalg.norm(self.velocity)
+            if speed < 0.5:
+                self.animated_sprite.play_animation('idle')
+            else:
+                self.animated_sprite.play_animation('walk')
+
         return self._wander_behavior()
+
+    def update(self, world):
+        """Update rabbit state and animation"""
+        # Update base agent
+        super().update(world)
+
+        # Update facing direction based on velocity
+        if np.linalg.norm(self.velocity) > 0.1:
+            self.last_velocity = self.velocity.copy()
+
+            # Determine facing direction
+            if self.velocity[0] > 0.1:
+                self.facing_right = True
+            elif self.velocity[0] < -0.1:
+                self.facing_right = False
+
+        # Update animation flip
+        if self.animated_sprite:
+            self.animated_sprite.set_flip(not self.facing_right)
 
     def _execute_action(self, action, world):
         """Override to add eating behavior"""
@@ -144,16 +197,13 @@ class Rabbit(BaseAgent):
         action_type = action.get('type', 'idle')
 
         if action_type == 'eat':
-            # Attempt to eat food at position
             self._attempt_eat_food(world)
         else:
-            # Use parent class implementation for other actions
             super()._execute_action(action, world)
 
     def _attempt_eat_food(self, world):
         """Attempt to eat food from the world's food system"""
         if hasattr(world, 'food_manager'):
-            # Try to consume food near this position
             nutrition_gained = world.food_manager.consume_food_at(
                 self.position,
                 consumption_radius=self.eating_distance,
@@ -161,18 +211,14 @@ class Rabbit(BaseAgent):
             )
 
             if nutrition_gained > 0:
-                # Gain energy from eating
                 self.energy = min(self.max_energy, self.energy + nutrition_gained)
                 self.eating_timer = 20
-                # Eating costs a tiny bit of energy (chewing)
                 self.energy -= 0.5
 
     def _get_nearby_food(self, world_state):
         """Get nearby food sources from the world"""
         food_list = []
 
-        # Get food manager reference from the calling world
-        # This is passed through world_state during perceive_world
         if 'food_sources' in world_state:
             food_sources = world_state['food_sources']
 
@@ -187,17 +233,14 @@ class Rabbit(BaseAgent):
                         'object': food
                     })
 
-            # Sort by distance (closest first)
             food_list.sort(key=lambda f: f['distance'])
 
         return food_list
 
     def _perceive_world(self, world):
         """Override to include food sources in perception"""
-        # Get base world state from parent class
         world_state = super()._perceive_world(world)
 
-        # Add food sources to world state
         if hasattr(world, 'food_manager'):
             nearby_food = world.food_manager.get_food_in_range(
                 self.position,
@@ -227,7 +270,6 @@ class Rabbit(BaseAgent):
                 eligible_mates.append(rabbit)
 
         if eligible_mates:
-            # Find closest eligible mate
             return min(eligible_mates,
                        key=lambda r: np.linalg.norm(r.position - self.position))
 
@@ -235,16 +277,13 @@ class Rabbit(BaseAgent):
 
     def _wander_behavior(self):
         """Generate wandering movement"""
-        # Random walk with some direction persistence
         self.wander_angle += random.uniform(-0.3, 0.3)
 
-        # Calculate wander direction
         wander_force = np.array([
             np.cos(self.wander_angle),
             np.sin(self.wander_angle)
         ]) * self.wander_strength
 
-        # Add some randomness
         random_force = np.random.normal(0, 0.1, 2)
 
         total_force = wander_force + random_force
@@ -256,25 +295,22 @@ class Rabbit(BaseAgent):
 
     def get_food_targets(self, nearby_entities):
         """Return entities this rabbit can eat (none for herbivores)"""
-        # Rabbits are herbivores, they don't eat other animals
         return []
 
     def _create_offspring(self, position):
         """Create a new rabbit offspring"""
-        # Add some genetic variation
         offspring_pos = position + np.random.normal(0, 10, 2)
 
-        # Keep within world bounds
         offspring_pos[0] = max(20, min(config.SCREEN_WIDTH - 20, offspring_pos[0]))
         offspring_pos[1] = max(20, min(config.SCREEN_HEIGHT - 20, offspring_pos[1]))
 
         new_rabbit = Rabbit(offspring_pos)
 
-        # Inherit some traits with slight variation (genetic algorithm basics)
+        # Inherit traits with variation
         new_rabbit.max_speed = self.max_speed + random.uniform(-0.2, 0.2)
         new_rabbit.vision_range = self.vision_range + random.uniform(-10, 10)
         new_rabbit.fear_distance = self.fear_distance + random.uniform(-5, 5)
-        new_rabbit.energy = 50  # Start with moderate energy
+        new_rabbit.energy = 50
 
         print(f"🐰 New rabbit born! {new_rabbit.id}")
         return new_rabbit
@@ -288,19 +324,28 @@ class Rabbit(BaseAgent):
         return False
 
     def draw(self, screen, camera_offset=(0, 0)):
-        """Draw the rabbit with visual feedback"""
+        """Draw the rabbit with animation or fallback to circle"""
         if not self.is_alive:
             return
 
-        # Draw using parent method first
-        super().draw(screen, camera_offset)
+        pos = (int(self.position[0] - camera_offset[0]),
+               int(self.position[1] - camera_offset[1]))
 
-        # Draw food target line in debug mode
-        if (getattr(config, 'DEBUG_MODE', False) and
-                self.target_food and
-                self.current_state == "seeking_food"):
-            start_pos = (int(self.position[0]), int(self.position[1]))
-            end_pos = (int(self.target_food['position'][0]),
-                       int(self.target_food['position'][1]))
+        # Try to use animated sprite
+        if self.animated_sprite:
+            self.animated_sprite.draw(screen, pos)
+        else:
+            # Fallback to parent class drawing (circles)
+            super().draw(screen, camera_offset)
 
-            pygame.draw.line(screen, (255, 255, 0), start_pos, end_pos, 1)
+        # Draw energy bar if low
+        if self.energy < self.max_energy * 0.5:
+            self._draw_energy_bar(screen, pos)
+
+        # Debug info
+        if getattr(config, 'DEBUG_MODE', False):
+            if self.target_food and self.current_state == "seeking_food":
+                start_pos = pos
+                end_pos = (int(self.target_food['position'][0]),
+                           int(self.target_food['position'][1]))
+                pygame.draw.line(screen, (255, 255, 0), start_pos, end_pos, 1)

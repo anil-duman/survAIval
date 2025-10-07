@@ -6,6 +6,11 @@ Run this file to start the simulation
 
 import pygame
 import sys
+# Force reload animation module
+import importlib
+from utils import animation
+importlib.reload(animation)
+
 from engine.simulation import Simulation
 import config
 
