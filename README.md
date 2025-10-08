@@ -60,9 +60,10 @@ python main.py
 
 - ✅ Basic simulation framework
 - ✅ Test entities and movement
-- 🔄 AI agent implementation (in progress)
-- ⏳ Reinforcement learning algorithms (planned)
-- ⏳ Multi-species ecosystem (planned)
+- ✅ AI agent implementation
+- ✅ Multi-species ecosystem
+- 🔄 Reinforcement learning algorithms (in progress)
+- ⏳ Detailed environment and more species (planned)
 
 ## Development Goals
 
