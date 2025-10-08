@@ -251,30 +251,54 @@ def init_animations() -> SpriteAnimationManager:
 
     # Rabbit config (simple - 16 frames) - SLOWER ANIMATION
     rabbit_config = {
-        'idle': {'start': 0, 'count': 4, 'duration': 20},  # Daha yavaş
-        'walk': {'start': 4, 'count': 4, 'duration': 12},  # Daha yavaş
+        'idle': {'start': 0, 'count': 4, 'duration': 20},
+        'walk': {'start': 4, 'count': 4, 'duration': 12},
         'hit': {'start': 8, 'count': 4, 'duration': 10},
         'death': {'start': 12, 'count': 4, 'duration': 15}
     }
 
     # Wolf config (detailed - 45 frames) - SLOWER ANIMATION
+
     wolf_config = {
-        'idle': {'start': 0, 'count': 5, 'duration': 18},  # Daha yavaş
-        'walk': {'start': 5, 'count': 8, 'duration': 10},  # Daha yavaş
-        'jump': {'start': 13, 'count': 3, 'duration': 12},
-        'attack': {'start': 16, 'count': 7, 'duration': 7},
-        'attack2': {'start': 23, 'count': 5, 'duration': 7},
-        'howl': {'start': 28, 'count': 9, 'duration': 12},
-        'hit': {'start': 37, 'count': 3, 'duration': 8},
-        'death': {'start': 40, 'count': 5, 'duration': 15}
+
+        'idle': {'start': 0, 'count': 4, 'duration': 18},
+        'walk': {'start': 4, 'count': 8, 'duration': 10},
+        'jump': {'start': 12, 'count': 3, 'duration': 12},
+        'attack': {'start': 15, 'count': 7, 'duration': 7},
+        'attack2': {'start': 22, 'count': 5, 'duration': 7},
+        'howl': {'start': 27, 'count': 9, 'duration': 12},
+        'hit': {'start': 36, 'count': 3, 'duration': 8},
+        'death': {'start': 39, 'count': 7, 'duration': 15}
     }
+
+    # Bear config - Apex Predator
+    bear_config = {
+        'idle': {'start': 0, 'count': 4, 'duration': 18},
+        'walk': {'start': 4, 'count': 8, 'duration': 10},
+        'jump': {'start': 12, 'count': 3, 'duration': 12},
+        'attack': {'start': 15, 'count': 7, 'duration': 7},
+        'attack2': {'start': 22, 'count': 5, 'duration': 7},
+        'howl': {'start': 27, 'count': 9, 'duration': 12},
+        'hit': {'start': 36, 'count': 3, 'duration': 8},
+        'death': {'start': 39, 'count': 7, 'duration': 15}
+    }
+
+    # Deer config - Herbivore
+    deer_config = {
+
+        'idle': {'start': 0, 'count': 5, 'duration': 18},
+        'walk': {'start': 5, 'count': 3, 'duration': 10},
+        'jump': {'start': 8, 'count': 3, 'duration': 12},
+        'attack': {'start': 11, 'count': 7, 'duration': 7},
+        'hit': {'start': 18, 'count': 3, 'duration': 8},
+        'death': {'start': 21, 'count': 5, 'duration': 15}
+    }
+
 
     # Load animations with BIGGER scale
     manager.load_animal_sprite('rabbit', 'assets/animals/rabbit_spritesheet.png', rabbit_config, scale=2.5)
     manager.load_animal_sprite('wolf', 'assets/animals/wolf_spritesheet.png', wolf_config, scale=2.5)
-
-    # Add more animals as you export them
-    # manager.load_animal_sprite('bear', 'assets/animals/bear_spritesheet.png', bear_config)
-    # manager.load_animal_sprite('deer', 'assets/animals/deer_spritesheet.png', deer_config)
+    manager.load_animal_sprite('bear', 'assets/animals/bear_spritesheet.png', bear_config, scale=2.5)
+    manager.load_animal_sprite('deer', 'assets/animals/deer_spritesheet.png', deer_config, scale=2.5)
 
     return manager

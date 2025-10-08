@@ -11,6 +11,8 @@ import os
 import config
 from agents.rabbit import Rabbit
 from agents.wolf import Wolf
+from agents.deer import Deer
+from agents.bear import Bear
 from environment.food_system import FoodManager
 from utils.animation import init_animations, get_animation_manager
 
@@ -94,10 +96,47 @@ class Simulation:
             self.agents.append(wolf)
             self.stats['total_born'] += 1
 
+        # Create deer
+        for i in range(config.INITIAL_DEER):
+            position = [
+                random.randint(60, config.SCREEN_WIDTH - 60),
+                random.randint(60, config.SCREEN_HEIGHT - 60)
+            ]
+            deer = Deer(position)
+
+            # Assign animated sprite
+            deer_sprite = anim_mgr.get_sprite('deer')
+            if deer_sprite:
+                deer.set_animated_sprite(deer_sprite)
+
+            self.agents.append(deer)
+            self.stats['total_born'] += 1
+
+        # Create bears
+        for i in range(config.INITIAL_BEARS):
+            position = [
+                random.randint(150, config.SCREEN_WIDTH - 150),
+                random.randint(150, config.SCREEN_HEIGHT - 150)
+            ]
+            bear = Bear(position)
+
+            # Assign animated sprite
+            bear_sprite = anim_mgr.get_sprite('bear')
+            if bear_sprite:
+                bear.set_animated_sprite(bear_sprite)
+
+            self.agents.append(bear)
+            self.stats['total_born'] += 1
+
+
+        deer_count = len([a for a in self.agents if a.agent_type == 'deer'])
+        bear_count = len([a for a in self.agents if a.agent_type == 'bear'])
         rabbits = len([a for a in self.agents if a.agent_type == 'rabbit'])
         wolves = len([a for a in self.agents if a.agent_type == 'wolf'])
         print(f"🐰 Created {rabbits} animated rabbits")
         print(f"🐺 Created {wolves} animated wolves")
+        print(f"🦌 Created {deer_count} deer")
+        print(f"🐻 Created {bear_count} bears")
 
     def handle_events(self):
         """Process input events"""
@@ -114,6 +153,12 @@ class Simulation:
 
                 elif event.key == pygame.K_w:
                     self._add_random_wolf()
+
+                elif event.key == pygame.K_e:
+                    self._add_random_deer()
+
+                elif event.key == pygame.K_b:
+                    self._add_random_bear()
 
                 elif event.key == pygame.K_p:
                     self.paused = not self.paused
@@ -171,6 +216,42 @@ class Simulation:
         self.agents.append(wolf)
         self.stats['total_born'] += 1
         print(f"🐺 Added new wolf! Total: {self.get_agent_count_by_type('wolf')}")
+
+    def _add_random_deer(self):
+        """Add a new deer at random position"""
+        position = [
+            random.randint(60, config.SCREEN_WIDTH - 60),
+            random.randint(60, config.SCREEN_HEIGHT - 60)
+        ]
+        deer = Deer(position)
+
+        # Assign animated sprite
+        anim_manager = get_animation_manager()
+        deer_sprite = anim_manager.get_sprite('deer')
+        if deer_sprite:
+            deer.set_animated_sprite(deer_sprite)
+
+        self.agents.append(deer)
+        self.stats['total_born'] += 1
+        print(f"🦌 Added new deer! Total deer: {self.get_agent_count_by_type('deer')}")
+
+    def _add_random_bear(self):
+        """Add a new bear at random position"""
+        position = [
+            random.randint(150, config.SCREEN_WIDTH - 150),
+            random.randint(150, config.SCREEN_HEIGHT - 150)
+        ]
+        bear = Bear(position)
+
+        # Assign animated sprite
+        anim_manager = get_animation_manager()
+        bear_sprite = anim_manager.get_sprite('bear')
+        if bear_sprite:
+            bear.set_animated_sprite(bear_sprite)
+
+        self.agents.append(bear)
+        self.stats['total_born'] += 1
+        print(f"🐻 Added new bear! Total bears: {self.get_agent_count_by_type('bear')}")
 
     def _reset_simulation(self):
         """Reset the simulation to initial state"""
@@ -272,6 +353,8 @@ class Simulation:
         # Statistics
         rabbit_count = self.get_agent_count_by_type('rabbit')
         wolf_count = self.get_agent_count_by_type('wolf')
+        deer_count = self.get_agent_count_by_type('deer')
+        bear_count = self.get_agent_count_by_type('bear')
         food_stats = self.food_manager.get_statistics()
 
         if wolf_count > 0:
@@ -281,7 +364,9 @@ class Simulation:
 
         stats = [
             f"🐰 Rabbits: {rabbit_count}",
+            f"🦌 Deer: {deer_count}",
             f"🐺 Wolves: {wolf_count}",
+            f"🐻 Bears: {bear_count}",
             f"Ratio: {ratio:.1f}:1",
             "",
             f"🌱 Food: {food_stats['available_food']}/{food_stats['total_food_sources']}",
@@ -343,7 +428,7 @@ class Simulation:
     def run(self):
         """Main simulation loop"""
         print("🚀 Starting animated predator-prey simulation...")
-        print("📝 Controls: SPACE=Rabbit, W=Wolf, F=Food, P=Pause, D=Debug, R=Reset")
+        print("📝 Controls: SPACE=Rabbit, W=Wolf, E=Deer, B=Bear, F=Food, P=Pause, D=Debug, R=Reset")
 
         while self.running:
             self.handle_events()
