@@ -43,6 +43,10 @@ class Simulation:
         print("🎬 Initializing animation system...")
         self.animation_manager = init_animations()
 
+        # Q-Learning system - ADD THIS
+        self.learning_timer = 0
+        self.learning_save_interval = 600  # Save every 10 seconds
+
         # Statistics
         self.stats = {
             'total_born': 0,
@@ -160,6 +164,23 @@ class Simulation:
                 elif event.key == pygame.K_b:
                     self._add_random_bear()
 
+                elif event.key == pygame.K_l:
+                    # Toggle learning
+                    is_enabled = not Rabbit.learning_enabled
+                    Rabbit.enable_learning(is_enabled)
+                    self.stats['learning_enabled'] = is_enabled
+
+                elif event.key == pygame.K_s:
+                    # Save Q-table
+                    if Rabbit.learning_enabled:
+                        Rabbit.save_learning()
+
+                elif event.key == pygame.K_k:
+                    # Load Q-table
+                    if Rabbit.learning_enabled or Rabbit.shared_q_agent:
+                        Rabbit.enable_learning(True)
+                        Rabbit.load_learning()
+
                 elif event.key == pygame.K_p:
                     self.paused = not self.paused
                     status = "paused" if self.paused else "resumed"
@@ -276,6 +297,15 @@ class Simulation:
         # Update animation system - IMPORTANT
         self.animation_manager.update_all()
 
+        # Learning updates - ADD THIS
+        if Rabbit.learning_enabled:
+            self.learning_timer += 1
+
+            if self.learning_timer % 60 == 0:
+                Rabbit.decay_exploration()
+
+            if self.learning_timer % self.learning_save_interval == 0:
+                Rabbit.save_learning()
         # Update food system
         self.food_manager.update(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
 
@@ -337,7 +367,12 @@ class Simulation:
         controls = [
             "SPACE: Add rabbit",
             "W: Add wolf",
+            "E: Add deer",
+            "B: Add bear",
             "F: Spawn food",
+            "L: Toggle learning",  # ADD
+            "S: Save Q-table",  # ADD
+            "K: Load Q-table",  # ADD
             "P: Pause/Resume",
             "D: Toggle debug",
             "R: Reset",
@@ -377,9 +412,20 @@ class Simulation:
             f"Total Died: {self.stats['total_died']}",
             f"Rabbits Eaten: {self.stats['rabbits_eaten']}",
             "",
-            f"FPS: {int(self.clock.get_fps())}",
+            f"FPS: {int(self.clock.get_fps())}"
+            f"🧠 Learning: {'ON' if Rabbit.learning_enabled else 'OFF'}",
             f"Status: {'PAUSED' if self.paused else 'RUNNING'}"
         ]
+
+        # Learning stats if enabled
+        if Rabbit.learning_enabled:
+            learning_stats = Rabbit.get_learning_stats()
+            if learning_stats:
+                stats.extend([
+                    f"Q-States: {learning_stats['q_table_size']}",
+                    f"Explore: {learning_stats['exploration_rate']:.3f}",
+                    f"Avg Reward: {learning_stats['avg_reward']:.1f}"
+                ])
 
         x_pos = config.SCREEN_WIDTH - 220
         y_offset = 50
