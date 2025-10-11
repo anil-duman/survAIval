@@ -1,4 +1,4 @@
-# ai/q_learning.py - Q-Learning implementation
+# ai/rabbit_q_learning.py - Q-Learning implementation
 """
 SurvAIval Q-Learning System
 Simple reinforcement learning for agent decision making
@@ -11,7 +11,7 @@ import pickle
 import os
 
 
-class QLearningAgent:
+class RabbitQLearningAgent:
     """Q-Learning agent for decision making"""
 
     def __init__(self, learning_rate: float = 0.1, discount_factor: float = 0.95,

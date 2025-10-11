@@ -14,7 +14,7 @@ from utils.animation import AnimatedSprite
 
 # Import Q-Learning (optional dependency)
 try:
-    from ai.q_learning import QLearningAgent
+    from ai.rabbit_q_learning import QLearningAgent
 
     Q_LEARNING_AVAILABLE = True
 except ImportError:

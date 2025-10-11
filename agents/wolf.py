@@ -1,7 +1,7 @@
-# agents/wolf.py - Wolf predator agent
+# agents/wolf.py - Wolf with integrated Q-Learning
 """
 SurvAIval Wolf Agent
-Carnivore predator with pack hunting behavior
+Carnivore predator with pack hunting behavior and optional Q-Learning
 """
 
 import pygame
@@ -10,18 +10,49 @@ import random
 from agents.base_agent import BaseAgent
 import config
 from typing import Optional
-from utils.animation import AnimatedSprite  # Import the necessary type hint
+from utils.animation import AnimatedSprite
+
+# Import Q-Learning (optional dependency)
+try:
+    from ai.wolf_q_learning import WolfQLearningAgent
+
+    WOLF_Q_LEARNING_AVAILABLE = True
+except ImportError:
+    WOLF_Q_LEARNING_AVAILABLE = False
+    print("⚠️ Wolf Q-Learning not available")
 
 
 class Wolf(BaseAgent):
-    """Wolf agent - Pack hunter that preys on herbivores"""
+    """Wolf agent - Pack hunter with optional learning"""
+
+    # Shared Q-Learning agent for all wolves (collective pack learning)
+    shared_q_agent = None
+    learning_enabled = False  # Global toggle
+
+    @classmethod
+    def enable_learning(cls, enable: bool = True):
+        """Enable or disable Q-Learning for all wolves"""
+        if not WOLF_Q_LEARNING_AVAILABLE and enable:
+            print("❌ Cannot enable wolf learning: Q-Learning module not found")
+            return False
+
+        cls.learning_enabled = enable
+
+        if enable and cls.shared_q_agent is None:
+            cls.shared_q_agent = WolfQLearningAgent(
+                learning_rate=0.1,
+                discount_factor=0.95,
+                exploration_rate=0.25,
+                exploration_decay=0.9997
+            )
+            print("🐺🧠 Q-Learning enabled for wolves!")
+        elif not enable:
+            print("🔒 Wolf Q-Learning disabled")
+
+        return True
 
     def __init__(self, position):
-        """Initialize wolf agent
-
-        Args:
-            position: [x, y] starting position
-        """
+        """Initialize wolf agent"""
         super().__init__(position, "wolf", max_energy=120)
 
         # Wolf-specific properties
@@ -53,86 +84,115 @@ class Wolf(BaseAgent):
         self.pack_mates = []
         self.last_kill_timer = 0
 
-        # Animation state for the sprite system
+        # Learning state (only used if learning enabled)
+        self.q_state = None
+        self.q_action = None
+        self.last_energy = self.energy
+        self.last_killed_prey = False
+        self.last_pack_hunt = False
+
+        # Animation state
         self.animated_sprite: Optional[AnimatedSprite] = None
         self.facing_right = True
         self.last_velocity = np.array([1.0, 0.0])
 
-    # =========================================================================
-    # NEW METHODS FOR ANIMATION INTEGRATION
-    # =========================================================================
-
     def set_animated_sprite(self, sprite: AnimatedSprite) -> None:
-        """Assigns the AnimatedSprite instance to this agent.
-
-        This resolves the 'Wolf object has no attribute set_animated_sprite' error.
-        """
+        """Assigns the AnimatedSprite instance to this agent"""
         self.animated_sprite = sprite
 
     def _update_animation_state(self) -> None:
-        """Determines the correct animation and flip state based on velocity/action."""
+        """Determines the correct animation and flip state"""
         if self.animated_sprite is None or not self.is_alive:
             return
 
         speed = np.linalg.norm(self.velocity)
 
-        # 1. Handle Flip State (Direction)
         if speed > 0.1:
-            # We check the direction of movement
-            if self.velocity[0] > 0.1:  # Moving Right
+            if self.velocity[0] > 0.1:
                 self.animated_sprite.set_flip(False)
-            elif self.velocity[0] < -0.1:  # Moving Left
+            elif self.velocity[0] < -0.1:
                 self.animated_sprite.set_flip(True)
 
-        # 2. Handle Animation Playback (State)
         if self.current_state == "attacking":
-            # Play attack animation once, then transition back to 'walk' or 'idle'
             self.animated_sprite.play_animation('attack', reset=True)
         elif self.current_state == "chasing" or speed > 0.5:
             self.animated_sprite.play_animation('walk')
         elif speed > 0.05:
-            # Slower movement like patrolling
             self.animated_sprite.play_animation('walk')
         else:
             self.animated_sprite.play_animation('idle')
 
-    # =========================================================================
-    # CORE AI/MOVEMENT METHODS
-    # =========================================================================
-
     def get_color(self):
         """Return wolf display color"""
-        if self.hunting_timer > 0:
-            return (150, 30, 30)
-        elif self.energy < 40:
-            return (80, 80, 80)
-        elif len(self.pack_mates) > 0:
-            return (120, 120, 140)
+        # Different colors for learning vs normal
+        if self.learning_enabled:
+            if self.hunting_timer > 0:
+                return (200, 50, 200)  # Purple when hunting (learned)
+            elif len(self.pack_mates) > 1:
+                return (150, 100, 200)  # Purple-ish when in pack
+            else:
+                return (180, 120, 180)  # Light purple (learning mode)
         else:
-            return config.WOLF_COLOR
+            if self.hunting_timer > 0:
+                return (150, 30, 30)
+            elif self.energy < 40:
+                return (80, 80, 80)
+            elif len(self.pack_mates) > 0:
+                return (120, 120, 140)
+            else:
+                return config.WOLF_COLOR
 
     def decide_action(self, world_state):
-        """AI decision making for wolf behavior
-
-        Args:
-            world_state: Dictionary with world information
-
-        Returns:
-            Action dictionary
-        """
-        # Update animation state BEFORE execution (to prepare for draw)
+        """AI decision making - uses Q-Learning if enabled"""
         self._update_animation_state()
 
-        # Update timers
         if self.hunting_timer > 0:
             self.hunting_timer -= 1
-        # ... (rest of the decide_action logic remains the same)
         if self.last_kill_timer > 0:
             self.last_kill_timer -= 1
 
-        # Update pack awareness
         self._update_pack_mates(world_state['same_species'])
 
+        # Use Q-Learning if enabled
+        if self.learning_enabled and self.shared_q_agent:
+            return self._decide_with_learning(world_state)
+        else:
+            return self._decide_normal(world_state)
+
+    def _decide_with_learning(self, world_state):
+        """Decision making using Q-Learning"""
+        # Get Q-Learning state
+        world_state['pack_mates'] = self.pack_mates
+        q_state = self.shared_q_agent.get_state(world_state)
+
+        # Update Q-values from previous action
+        if self.q_state is not None and self.q_action is not None:
+            reward = self.shared_q_agent.calculate_reward(
+                self, self.last_energy, self.q_action,
+                killed_prey=self.last_killed_prey,
+                pack_size=len(self.pack_mates),
+                died=not self.is_alive,
+                pack_hunt=self.last_pack_hunt
+            )
+            self.shared_q_agent.update_q_value(
+                self.q_state, self.q_action, reward, q_state
+            )
+
+        # Get new action from Q-Learning
+        q_action = self.shared_q_agent.get_action(q_state, exploring=True)
+
+        # Store for next update
+        self.q_state = q_state
+        self.q_action = q_action
+        self.last_energy = self.energy
+        self.last_killed_prey = False
+        self.last_pack_hunt = False
+
+        # Convert Q-action to game action
+        return self._convert_q_action(q_action, world_state)
+
+    def _decide_normal(self, world_state):
+        """Normal decision making (original behavior)"""
         # Priority 1: HUNT when hungry
         if self.energy < self.hunt_energy_threshold:
             prey_list = self._find_prey(world_state['prey'])
@@ -143,7 +203,6 @@ class Wolf(BaseAgent):
                 if best_prey:
                     distance = best_prey['distance']
 
-                    # If close enough to attack
                     if distance < self.attack_distance:
                         self.current_state = "attacking"
                         self.hunting_timer = 30
@@ -151,8 +210,6 @@ class Wolf(BaseAgent):
                             'type': 'hunt',
                             'target': best_prey['object']
                         }
-
-                    # Otherwise, chase
                     else:
                         self.target_prey = best_prey
                         self.current_state = "chasing"
@@ -168,7 +225,7 @@ class Wolf(BaseAgent):
                             'speed_multiplier': speed_multiplier
                         }
 
-        # Priority 2: Avoid stronger predators (bears)
+        # Priority 2: Avoid bears
         threats = [p for p in world_state['predators'] if p.agent_type == 'bear']
         if threats:
             nearest_threat = min(threats, key=lambda t: np.linalg.norm(t.position - self.position))
@@ -181,7 +238,7 @@ class Wolf(BaseAgent):
                     'threat_position': nearest_threat.position
                 }
 
-        # Priority 3: Reproduction (when well-fed)
+        # Priority 3: Reproduction
         if (self.energy > self.min_reproduction_energy and
                 self.reproduction_cooldown == 0 and
                 self.last_kill_timer == 0):
@@ -202,7 +259,7 @@ class Wolf(BaseAgent):
                         'target_position': potential_mate.position
                     }
 
-        # Priority 4: Pack behavior - stay somewhat close to pack
+        # Priority 4: Pack behavior
         if len(self.pack_mates) > 0 and random.random() < 0.3:
             pack_center = self._calculate_pack_center()
             distance_to_pack = np.linalg.norm(pack_center - self.position)
@@ -214,8 +271,74 @@ class Wolf(BaseAgent):
                     'target_position': pack_center
                 }
 
-        # Default: Patrol/wander (looking for prey)
+        # Default: Patrol
         self.current_state = "patrolling"
+        return self._patrol_behavior()
+
+    def _convert_q_action(self, q_action: str, world_state: dict):
+        """Convert Q-Learning action to game action"""
+        prey_list = self._find_prey(world_state['prey'])
+
+        if q_action == 'hunt_with_pack':
+            if prey_list and len(self.pack_mates) > 0:
+                best_prey = self._select_best_prey(prey_list)
+                self.current_state = "hunting_with_pack_learned"
+                self.last_pack_hunt = True
+                return {
+                    'type': 'chase',
+                    'target_position': best_prey['position'],
+                    'speed_multiplier': 1.0 + self.pack_bonus
+                }
+
+        elif q_action == 'hunt_alone':
+            if prey_list:
+                best_prey = self._select_best_prey(prey_list)
+                self.current_state = "hunting_alone_learned"
+                return {
+                    'type': 'chase',
+                    'target_position': best_prey['position']
+                }
+
+        elif q_action == 'wait_for_pack':
+            self.current_state = "waiting_for_pack_learned"
+            # Slow down and wait
+            return {
+                'type': 'move',
+                'direction': np.array([0.0, 0.0])
+            }
+
+        elif q_action == 'chase_aggressively':
+            if prey_list:
+                best_prey = self._select_best_prey(prey_list)
+                self.current_state = "chasing_aggressively_learned"
+                return {
+                    'type': 'chase',
+                    'target_position': best_prey['position'],
+                    'speed_multiplier': 1.3
+                }
+
+        elif q_action in ['coordinate_left', 'coordinate_right']:
+            if prey_list and len(self.pack_mates) > 0:
+                best_prey = self._select_best_prey(prey_list)
+                # Flank the prey
+                offset = np.array([50, 0]) if q_action == 'coordinate_left' else np.array([-50, 0])
+                flank_pos = best_prey['position'] + offset
+                self.current_state = "flanking_learned"
+                self.last_pack_hunt = True
+                return {
+                    'type': 'seek',
+                    'target_position': flank_pos
+                }
+
+        elif q_action == 'rest':
+            self.current_state = "resting_learned"
+            return {
+                'type': 'move',
+                'direction': np.array([0.0, 0.0])
+            }
+
+        # Default: patrol
+        self.current_state = "patrolling_learned"
         return self._patrol_behavior()
 
     def _execute_action(self, action, world):
@@ -234,14 +357,12 @@ class Wolf(BaseAgent):
                 self.max_speed *= speed_mult
                 self._seek_target(target_pos)
                 self.max_speed = old_max_speed
-
         else:
             super()._execute_action(action, world)
 
     def _hunt_target(self, target, world):
         """Override hunting behavior for wolves"""
         distance = np.linalg.norm(self.position - target.position)
-
         self._seek_target(target.position)
 
         if distance < self.attack_distance:
@@ -257,11 +378,32 @@ class Wolf(BaseAgent):
                 target._die("hunted")
 
                 self.last_kill_timer = 180
-                print(f"🐺 {self.id} killed {target.id}! Energy: {self.energy:.1f}")
+
+                # Track for learning
+                if self.learning_enabled:
+                    self.last_killed_prey = True
+                    if len(self.pack_mates) > 0:
+                        self.last_pack_hunt = True
+
+                mode = "PACK" if len(self.pack_mates) > 0 else "solo"
+                print(f"🐺 {self.id} killed {target.id} ({mode})! Energy: {self.energy:.1f}")
 
                 self._share_kill_with_pack(energy_gain * 0.3)
             else:
                 self.energy -= 5
+
+    def _die(self, cause="natural"):
+        """Override to give final learning update"""
+        if self.learning_enabled and self.shared_q_agent:
+            if self.q_state is not None and self.q_action is not None:
+                final_reward = -150.0
+                terminal_state = (0, 0, 0, 0)
+
+                self.shared_q_agent.update_q_value(
+                    self.q_state, self.q_action, final_reward, terminal_state
+                )
+
+        super()._die(cause)
 
     def _find_prey(self, prey_list):
         """Find available prey within hunting range"""
@@ -284,7 +426,7 @@ class Wolf(BaseAgent):
         return available_prey
 
     def _select_best_prey(self, prey_list):
-        """Select the best prey target based on distance and desirability"""
+        """Select the best prey target"""
         if not prey_list:
             return None
 
@@ -344,7 +486,7 @@ class Wolf(BaseAgent):
         return None
 
     def _patrol_behavior(self):
-        """Patrol behavior - purposeful wandering while hunting"""
+        """Patrol behavior"""
         self.wander_angle += random.uniform(-0.2, 0.2)
 
         wander_force = np.array([
@@ -378,7 +520,8 @@ class Wolf(BaseAgent):
         new_wolf.aggression = max(0.3, min(1.0, self.aggression + random.uniform(-0.1, 0.1)))
         new_wolf.energy = 70
 
-        print(f"🐺 New wolf born! {new_wolf.id}")
+        mode = "LEARNING" if self.learning_enabled else "normal"
+        print(f"🐺 New {mode} wolf born! {new_wolf.id}")
         return new_wolf
 
     def _is_predator(self, other_agent):
@@ -390,36 +533,23 @@ class Wolf(BaseAgent):
         return other_agent.agent_type in ['rabbit', 'deer']
 
     def draw(self, screen, camera_offset=(0, 0)):
-        """Draw the wolf using the animated sprite."""
+        """Draw the wolf"""
         if not self.is_alive:
-            # If the wolf has died, the death animation should play out
-            if self.animated_sprite and self.current_state == "death":
-                # Draw one last time before removal, if needed
-                pass
-            else:
-                return  # Don't draw if not alive and not playing death animation
+            return
 
-        # 1. Draw Animated Sprite
         if self.animated_sprite:
-            # Adjust position for the camera offset
             display_pos = (
                 int(self.position[0] - camera_offset[0]),
                 int(self.position[1] - camera_offset[1])
             )
-            # Use the sprite's draw method, which handles scaling and flipping
             self.animated_sprite.draw(screen, display_pos)
         else:
-            # Fallback drawing (calls BaseAgent's draw, likely a circle/square)
             super().draw(screen, camera_offset)
 
-        # 2. Draw debug visuals (lines, etc.)
-        if (getattr(config, 'DEBUG_MODE', False) and
-                self.target_prey and
-                self.current_state in ["chasing", "attacking"]):
+        if getattr(config, 'DEBUG_MODE', False) and self.target_prey and self.current_state in ["chasing", "attacking"]:
             start_pos = (int(self.position[0] - camera_offset[0]), int(self.position[1] - camera_offset[1]))
             end_pos = (int(self.target_prey['position'][0] - camera_offset[0]),
                        int(self.target_prey['position'][1] - camera_offset[1]))
-
             pygame.draw.line(screen, (255, 0, 0), start_pos, end_pos, 2)
 
         if getattr(config, 'DEBUG_MODE', False) and self.pack_mates:
@@ -427,3 +557,31 @@ class Wolf(BaseAgent):
                 start_pos = (int(self.position[0] - camera_offset[0]), int(self.position[1] - camera_offset[1]))
                 end_pos = (int(pack_mate.position[0] - camera_offset[0]), int(pack_mate.position[1] - camera_offset[1]))
                 pygame.draw.line(screen, (100, 100, 255), start_pos, end_pos, 1)
+
+    # Class methods for learning management
+    @classmethod
+    def save_learning(cls, filepath: str = "data/wolf_q_table.pkl"):
+        """Save Q-table"""
+        if cls.shared_q_agent:
+            cls.shared_q_agent.save_q_table(filepath)
+            cls.shared_q_agent.print_best_policies(top_n=5)
+
+    @classmethod
+    def load_learning(cls, filepath: str = "data/wolf_q_table.pkl"):
+        """Load Q-table"""
+        if cls.shared_q_agent:
+            return cls.shared_q_agent.load_q_table(filepath)
+        return False
+
+    @classmethod
+    def get_learning_stats(cls):
+        """Get learning statistics"""
+        if cls.shared_q_agent:
+            return cls.shared_q_agent.get_statistics()
+        return None
+
+    @classmethod
+    def decay_exploration(cls):
+        """Decay exploration rate"""
+        if cls.shared_q_agent:
+            cls.shared_q_agent.decay_exploration()

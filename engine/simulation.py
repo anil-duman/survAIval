@@ -43,7 +43,7 @@ class Simulation:
         print("🎬 Initializing animation system...")
         self.animation_manager = init_animations()
 
-        # Q-Learning system - ADD THIS
+        # Q-Learning system
         self.learning_timer = 0
         self.learning_save_interval = 600  # Save every 10 seconds
 
@@ -164,22 +164,53 @@ class Simulation:
                 elif event.key == pygame.K_b:
                     self._add_random_bear()
 
+
                 elif event.key == pygame.K_l:
-                    # Toggle learning
+
+                    # Toggle rabbit learning
+
                     is_enabled = not Rabbit.learning_enabled
+
                     Rabbit.enable_learning(is_enabled)
+
                     self.stats['learning_enabled'] = is_enabled
 
+
+                elif event.key == pygame.K_o:  # NEW - O button wolf learning
+
+                    # Toggle wolf learning
+
+                    is_enabled = not Wolf.learning_enabled
+
+                    Wolf.enable_learning(is_enabled)
+
+                    self.stats['wolf_learning_enabled'] = is_enabled
+
+
                 elif event.key == pygame.K_s:
-                    # Save Q-table
+
+                    # Save Q-tables
+
                     if Rabbit.learning_enabled:
                         Rabbit.save_learning()
 
+                    if Wolf.learning_enabled:
+                        Wolf.save_learning()
+
+
                 elif event.key == pygame.K_k:
-                    # Load Q-table
+
+                    # Load Q-tables
+
                     if Rabbit.learning_enabled or Rabbit.shared_q_agent:
                         Rabbit.enable_learning(True)
+
                         Rabbit.load_learning()
+
+                    if Wolf.learning_enabled or Wolf.shared_q_agent:
+                        Wolf.enable_learning(True)
+
+                        Wolf.load_learning()
 
                 elif event.key == pygame.K_p:
                     self.paused = not self.paused
@@ -297,7 +328,7 @@ class Simulation:
         # Update animation system - IMPORTANT
         self.animation_manager.update_all()
 
-        # Learning updates - ADD THIS
+        # Learning updates
         if Rabbit.learning_enabled:
             self.learning_timer += 1
 
@@ -306,6 +337,15 @@ class Simulation:
 
             if self.learning_timer % self.learning_save_interval == 0:
                 Rabbit.save_learning()
+
+        # Wolf learning updates
+        if Wolf.learning_enabled:
+            if self.learning_timer % 60 == 0:
+                Wolf.decay_exploration()
+
+            if self.learning_timer % self.learning_save_interval == 0:
+                Wolf.save_learning()
+
         # Update food system
         self.food_manager.update(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
 
@@ -370,9 +410,10 @@ class Simulation:
             "E: Add deer",
             "B: Add bear",
             "F: Spawn food",
-            "L: Toggle learning",  # ADD
-            "S: Save Q-table",  # ADD
-            "K: Load Q-table",  # ADD
+            "L: Toggle rabbit learning",
+            "O: Toggle wolf learning",
+            "S: Save Q-table",
+            "K: Load Q-table",
             "P: Pause/Resume",
             "D: Toggle debug",
             "R: Reset",
@@ -414,6 +455,7 @@ class Simulation:
             "",
             f"FPS: {int(self.clock.get_fps())}"
             f"🧠 Learning: {'ON' if Rabbit.learning_enabled else 'OFF'}",
+            f"🐺 Wolf Learning: {'ON' if Wolf.learning_enabled else 'OFF'}",
             f"Status: {'PAUSED' if self.paused else 'RUNNING'}"
         ]
 
@@ -425,6 +467,16 @@ class Simulation:
                     f"Q-States: {learning_stats['q_table_size']}",
                     f"Explore: {learning_stats['exploration_rate']:.3f}",
                     f"Avg Reward: {learning_stats['avg_reward']:.1f}"
+                ])
+
+        # Wolf learning stats
+        if Wolf.learning_enabled:
+            wolf_stats = Wolf.get_learning_stats()
+            if wolf_stats:
+                stats.extend([
+                    f"W Q-States: {wolf_stats['q_table_size']}",
+                    f"W Success: {wolf_stats['success_rate']:.1f}%",
+                    f"W Pack Hunts: {wolf_stats['pack_hunts']}",
                 ])
 
         x_pos = config.SCREEN_WIDTH - 220
