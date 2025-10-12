@@ -12,10 +12,37 @@ import config
 from typing import Optional
 from utils.animation import AnimatedSprite
 
+# Import Q-Learning
+try:
+    from ai.bear_q_learning import BearQLearningAgent
+    BEAR_Q_LEARNING_AVAILABLE = True
+except ImportError:
+    BEAR_Q_LEARNING_AVAILABLE = False
+
 
 class Bear(BaseAgent):
     """Bear agent - Apex predator with territorial behavior"""
+    # Shared Q-Learning
+    shared_q_agent = None
+    learning_enabled = False
 
+    @classmethod
+    def enable_learning(cls, enable: bool = True):
+        if not BEAR_Q_LEARNING_AVAILABLE and enable:
+            print("❌ Cannot enable bear learning")
+            return False
+
+        cls.learning_enabled = enable
+
+        if enable and cls.shared_q_agent is None:
+            cls.shared_q_agent = BearQLearningAgent()
+            print("🐻🧠 Q-Learning enabled for bears!")
+        elif not enable:
+            print("🔒 Bear Q-Learning disabled")
+
+
+
+        return True
     def __init__(self, position):
         """Initialize bear agent
 
@@ -53,6 +80,13 @@ class Bear(BaseAgent):
         self.last_kill_timer = 0
         self.territory_center = np.array(position, dtype=float)
         self.territory_established = False
+
+        # Learning state
+        self.q_state = None
+        self.q_action = None
+        self.last_energy = self.energy
+        self.last_killed_prey = False
+        self.prey_type_killed = None
 
         # Animation state
         self.animated_sprite: Optional[AnimatedSprite] = None
@@ -386,3 +420,26 @@ class Bear(BaseAgent):
             territory_pos = (int(self.territory_center[0]), int(self.territory_center[1]))
             pygame.draw.circle(screen, (255, 100, 0), territory_pos, int(self.territorial_radius), 2)
             pygame.draw.line(screen, (255, 150, 0), pos, territory_pos, 1)
+
+            @classmethod
+            def save_learning(cls, filepath="data/bear_q_table.pkl"):
+                if cls.shared_q_agent:
+                    cls.shared_q_agent.save_q_table(filepath)
+                    cls.shared_q_agent.print_best_policies(5)
+
+            @classmethod
+            def load_learning(cls, filepath="data/bear_q_table.pkl"):
+                if cls.shared_q_agent:
+                    return cls.shared_q_agent.load_q_table(filepath)
+                return False
+
+            @classmethod
+            def get_learning_stats(cls):
+                if cls.shared_q_agent:
+                    return cls.shared_q_agent.get_statistics()
+                return None
+
+            @classmethod
+            def decay_exploration(cls):
+                if cls.shared_q_agent:
+                    cls.shared_q_agent.decay_exploration()

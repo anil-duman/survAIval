@@ -164,6 +164,14 @@ class Simulation:
                 elif event.key == pygame.K_b:
                     self._add_random_bear()
 
+                elif event.key == pygame.K_i:
+                    is_enabled = not Deer.learning_enabled
+                    Deer.enable_learning(is_enabled)
+
+                elif event.key == pygame.K_u:
+                    is_enabled = not Bear.learning_enabled
+                    Bear.enable_learning(is_enabled)
+
 
                 elif event.key == pygame.K_l:
 
@@ -196,6 +204,12 @@ class Simulation:
 
                     if Wolf.learning_enabled:
                         Wolf.save_learning()
+
+                    if Deer.learning_enabled:
+                        Deer.save_learning()
+
+                    if Bear.learning_enabled:
+                        Bear.save_learning()
 
 
                 elif event.key == pygame.K_k:
@@ -346,6 +360,20 @@ class Simulation:
             if self.learning_timer % self.learning_save_interval == 0:
                 Wolf.save_learning()
 
+            # Deer learning updates
+        if Deer.learning_enabled:
+            if self.learning_timer % 60 == 0:
+                Deer.decay_exploration()
+            if self.learning_timer % self.learning_save_interval == 0:
+                Deer.save_learning()
+
+            # Bear learning updates
+        if Bear.learning_enabled:
+            if self.learning_timer % 60 == 0:
+                Bear.decay_exploration()
+            if self.learning_timer % self.learning_save_interval == 0:
+                Bear.save_learning()
+
         # Update food system
         self.food_manager.update(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
 
@@ -412,6 +440,8 @@ class Simulation:
             "F: Spawn food",
             "L: Toggle rabbit learning",
             "O: Toggle wolf learning",
+            "I: Toggle deer learning",
+            "U: Toggle bear learning",
             "S: Save Q-table",
             "K: Load Q-table",
             "P: Pause/Resume",
@@ -456,6 +486,8 @@ class Simulation:
             f"FPS: {int(self.clock.get_fps())}"
             f"🧠 Learning: {'ON' if Rabbit.learning_enabled else 'OFF'}",
             f"🐺 Wolf Learning: {'ON' if Wolf.learning_enabled else 'OFF'}",
+            f"🦌 Deer Learning: {'ON' if Deer.learning_enabled else 'OFF'}",
+            f"🐻 Bear Learning: {'ON' if Bear.learning_enabled else 'OFF'}",
             f"Status: {'PAUSED' if self.paused else 'RUNNING'}"
         ]
 

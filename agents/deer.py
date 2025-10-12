@@ -1,7 +1,7 @@
-# agents/deer.py - Deer herbivore agent
+# agents/deer.py - Deer with integrated Q-Learning
 """
 SurvAIval Deer Agent
-Large herbivore with herd behavior
+Large herbivore with herd behavior and optional Q-Learning
 """
 
 import pygame
@@ -12,16 +12,47 @@ import config
 from typing import Optional
 from utils.animation import AnimatedSprite
 
+# Import Q-Learning (optional dependency)
+try:
+    from ai.deer_q_learning import DeerQLearningAgent
+
+    DEER_Q_LEARNING_AVAILABLE = True
+except ImportError:
+    DEER_Q_LEARNING_AVAILABLE = False
+    print("⚠️ Deer Q-Learning not available")
+
 
 class Deer(BaseAgent):
-    """Deer agent - Large herbivore with herd instincts"""
+    """Deer agent - Large herbivore with herd instincts and optional learning"""
+
+    # Shared Q-Learning agent for all deer (collective herd learning)
+    shared_q_agent = None
+    learning_enabled = False  # Global toggle
+
+    @classmethod
+    def enable_learning(cls, enable: bool = True):
+        """Enable or disable Q-Learning for all deer"""
+        if not DEER_Q_LEARNING_AVAILABLE and enable:
+            print("❌ Cannot enable deer learning: Q-Learning module not found")
+            return False
+
+        cls.learning_enabled = enable
+
+        if enable and cls.shared_q_agent is None:
+            cls.shared_q_agent = DeerQLearningAgent(
+                learning_rate=0.1,
+                discount_factor=0.95,
+                exploration_rate=0.3,
+                exploration_decay=0.9995
+            )
+            print("🦌🧠 Q-Learning enabled for deer!")
+        elif not enable:
+            print("🔒 Deer Q-Learning disabled")
+
+        return True
 
     def __init__(self, position):
-        """Initialize deer agent
-
-        Args:
-            position: [x, y] starting position
-        """
+        """Initialize deer agent"""
         super().__init__(position, "deer", max_energy=100)
 
         # Deer-specific properties
@@ -49,6 +80,14 @@ class Deer(BaseAgent):
         self.eating_timer = 0
         self.herd_mates = []
 
+        # Learning state (only used if learning enabled)
+        self.q_state = None
+        self.q_action = None
+        self.last_energy = self.energy
+        self.last_ate = False
+        self.was_in_danger = False
+        self.escaped_danger = False
+
         # Animation state
         self.animated_sprite: Optional[AnimatedSprite] = None
         self.facing_right = True
@@ -60,25 +99,83 @@ class Deer(BaseAgent):
 
     def get_color(self):
         """Return deer display color"""
-        if self.panic_timer > 0:
-            return (200, 100, 80)
-        elif self.eating_timer > 0:
-            return (200, 150, 100)
-        elif len(self.herd_mates) > 2:
-            return (180, 120, 80)  # Slightly different when in herd
+        # Different colors for learning vs normal
+        if self.learning_enabled:
+            if self.panic_timer > 0:
+                return (255, 150, 100)  # Orange when fleeing (learned)
+            elif len(self.herd_mates) > 2:
+                return (150, 200, 150)  # Green when in herd (safe)
+            else:
+                return (200, 180, 100)  # Yellowish (learning mode)
         else:
-            return config.DEER_COLOR
+            if self.panic_timer > 0:
+                return (200, 100, 80)
+            elif self.eating_timer > 0:
+                return (200, 150, 100)
+            elif len(self.herd_mates) > 2:
+                return (180, 120, 80)
+            else:
+                return config.DEER_COLOR
 
     def decide_action(self, world_state):
-        """AI decision making for deer behavior"""
+        """AI decision making - uses Q-Learning if enabled"""
         if self.panic_timer > 0:
             self.panic_timer -= 1
         if self.eating_timer > 0:
             self.eating_timer -= 1
 
-        # Update herd awareness
         self._update_herd_mates(world_state['same_species'])
 
+        # Use Q-Learning if enabled
+        if self.learning_enabled and self.shared_q_agent:
+            return self._decide_with_learning(world_state)
+        else:
+            return self._decide_normal(world_state)
+
+    def _decide_with_learning(self, world_state):
+        """Decision making using Q-Learning"""
+        # Check if in danger
+        self.was_in_danger = len(world_state['predators']) > 0
+
+        # Add herd info to world state
+        world_state['herd_mates'] = self.herd_mates
+
+        # Get Q-Learning state
+        q_state = self.shared_q_agent.get_state(world_state)
+
+        # Update Q-values from previous action
+        if self.q_state is not None and self.q_action is not None:
+            herd_center = self._calculate_herd_center() if self.herd_mates else self.position
+            distance_to_herd = np.linalg.norm(herd_center - self.position)
+
+            reward = self.shared_q_agent.calculate_reward(
+                self, self.last_energy, self.q_action,
+                herd_size=len(self.herd_mates),
+                distance_to_herd=distance_to_herd,
+                died=not self.is_alive,
+                ate_food=self.last_ate,
+                was_in_danger=self.was_in_danger,
+                escaped=self.escaped_danger
+            )
+            self.shared_q_agent.update_q_value(
+                self.q_state, self.q_action, reward, q_state
+            )
+
+        # Get new action
+        q_action = self.shared_q_agent.get_action(q_state, exploring=True)
+
+        # Store for next update
+        self.q_state = q_state
+        self.q_action = q_action
+        self.last_energy = self.energy
+        self.last_ate = False
+        self.escaped_danger = False
+
+        # Convert Q-action to game action
+        return self._convert_q_action(q_action, world_state)
+
+    def _decide_normal(self, world_state):
+        """Normal decision making (original behavior)"""
         # Priority 1: FLEE from predators
         nearest_predator = self._find_nearest_predator(world_state['predators'])
         if nearest_predator:
@@ -94,7 +191,6 @@ class Deer(BaseAgent):
                 # Flee towards herd center if possible
                 if len(self.herd_mates) > 0:
                     herd_center = self._calculate_herd_center()
-                    # Flee away from predator but towards herd
                     flee_direction = self.position - nearest_predator.position
                     herd_direction = herd_center - self.position
                     combined_direction = flee_direction * 0.7 + herd_direction * 0.3
@@ -146,7 +242,6 @@ class Deer(BaseAgent):
             herd_center = self._calculate_herd_center()
             distance_to_herd = np.linalg.norm(herd_center - self.position)
 
-            # If too far from herd, move towards it
             if distance_to_herd > self.herd_range * 1.2:
                 self.current_state = "regrouping"
 
@@ -185,7 +280,7 @@ class Deer(BaseAgent):
                         'target_position': potential_mate.position
                     }
 
-        # Default: Wander with herd influence
+        # Default: Wander
         self.current_state = "wandering"
 
         if self.animated_sprite:
@@ -195,6 +290,52 @@ class Deer(BaseAgent):
             else:
                 self.animated_sprite.play_animation('walk')
 
+        return self._wander_with_herd()
+
+    def _convert_q_action(self, q_action: str, world_state: dict):
+        """Convert Q-Learning action to game action"""
+        nearest_predator = self._find_nearest_predator(world_state['predators'])
+
+        if q_action == 'flee_to_herd':
+            if nearest_predator and len(self.herd_mates) > 0:
+                herd_center = self._calculate_herd_center()
+                self.current_state = "fleeing_to_herd_learned"
+                self.escaped_danger = True
+                return {'type': 'seek', 'target_position': herd_center}
+
+        elif q_action == 'flee_alone':
+            if nearest_predator:
+                self.current_state = "fleeing_alone_learned"
+                self.escaped_danger = True
+                return {'type': 'flee', 'threat_position': nearest_predator.position}
+
+        elif q_action == 'stay_with_herd':
+            if len(self.herd_mates) > 0:
+                herd_center = self._calculate_herd_center()
+                self.current_state = "staying_with_herd_learned"
+                return {'type': 'seek', 'target_position': herd_center}
+
+        elif q_action == 'seek_food_near_herd':
+            nearby_food = self._get_nearby_food(world_state)
+            if nearby_food and len(self.herd_mates) > 0:
+                self.current_state = "seeking_food_near_herd_learned"
+                return {'type': 'seek', 'target_position': nearby_food[0]['position']}
+
+        elif q_action == 'seek_food_alone':
+            nearby_food = self._get_nearby_food(world_state)
+            if nearby_food:
+                self.current_state = "seeking_food_alone_learned"
+                return {'type': 'seek', 'target_position': nearby_food[0]['position']}
+
+        elif q_action == 'follow_leader':
+            if len(self.herd_mates) > 0:
+                # Follow closest herd mate
+                leader = min(self.herd_mates, key=lambda h: np.linalg.norm(h.position - self.position))
+                self.current_state = "following_leader_learned"
+                return {'type': 'seek', 'target_position': leader.position}
+
+        # Default: wander near herd
+        self.current_state = "wandering_learned"
         return self._wander_with_herd()
 
     def update(self, world):
@@ -237,6 +378,27 @@ class Deer(BaseAgent):
                 self.energy = min(self.max_energy, self.energy + nutrition_gained)
                 self.eating_timer = 25
                 self.energy -= 0.3
+
+                if self.learning_enabled:
+                    self.last_ate = True
+
+    def _die(self, cause="natural"):
+        """Override to give final learning update"""
+        if self.learning_enabled and self.shared_q_agent:
+            if self.q_state is not None and self.q_action is not None:
+                # Penalty based on whether was with herd
+                if len(self.herd_mates) == 0:
+                    final_reward = -150.0  # Died alone
+                else:
+                    final_reward = -100.0  # Died with herd
+
+                terminal_state = (0, 0, 0, 0)
+
+                self.shared_q_agent.update_q_value(
+                    self.q_state, self.q_action, final_reward, terminal_state
+                )
+
+        super()._die(cause)
 
     def _get_nearby_food(self, world_state):
         """Get nearby food sources"""
@@ -358,7 +520,8 @@ class Deer(BaseAgent):
         new_deer.fear_distance = self.fear_distance + random.uniform(-8, 8)
         new_deer.energy = 55
 
-        print(f"🦌 New deer born! {new_deer.id}")
+        mode = "LEARNING" if self.learning_enabled else "normal"
+        print(f"🦌 New {mode} deer born! {new_deer.id}")
         return new_deer
 
     def _is_predator(self, other_agent):
@@ -387,7 +550,35 @@ class Deer(BaseAgent):
 
         # Debug: show herd connections
         if getattr(config, 'DEBUG_MODE', False) and self.herd_mates:
-            for herd_mate in self.herd_mates[:3]:  # Only show 3 nearest
+            for herd_mate in self.herd_mates[:3]:
                 start_pos = pos
                 end_pos = (int(herd_mate.position[0]), int(herd_mate.position[1]))
                 pygame.draw.line(screen, (100, 180, 100), start_pos, end_pos, 1)
+
+    # Class methods for learning management
+    @classmethod
+    def save_learning(cls, filepath: str = "data/deer_q_table.pkl"):
+        """Save Q-table"""
+        if cls.shared_q_agent:
+            cls.shared_q_agent.save_q_table(filepath)
+            cls.shared_q_agent.print_best_policies(top_n=5)
+
+    @classmethod
+    def load_learning(cls, filepath: str = "data/deer_q_table.pkl"):
+        """Load Q-table"""
+        if cls.shared_q_agent:
+            return cls.shared_q_agent.load_q_table(filepath)
+        return False
+
+    @classmethod
+    def get_learning_stats(cls):
+        """Get learning statistics"""
+        if cls.shared_q_agent:
+            return cls.shared_q_agent.get_statistics()
+        return None
+
+    @classmethod
+    def decay_exploration(cls):
+        """Decay exploration rate"""
+        if cls.shared_q_agent:
+            cls.shared_q_agent.decay_exploration()
