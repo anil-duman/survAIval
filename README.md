@@ -62,8 +62,8 @@ python main.py
 - ✅ Test entities and movement
 - ✅ AI agent implementation
 - ✅ Multi-species ecosystem
-- 🔄 Reinforcement learning algorithms (in progress)
-- ⏳ Detailed environment and more species (planned)
+- ✅ Reinforcement learning algorithms (in progress)
+- 🔄 Detailed environment and more species (planned)
 
 ## Development Goals
 
