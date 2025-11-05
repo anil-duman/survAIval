@@ -1,0 +1,21 @@
+venv/
+.venv/
+env/
+.env/
+
+__pycache__/
+*.pyc
+*.pyd
+*.so
+
+.idea/
+.vscode/
+*.swp
+*~
+
+dist/
+build/
+*.egg-info/
+
+.DS_Store # macOS
+Thumbs.db # Windows
