@@ -1,7 +1,7 @@
-# engine/simulation.py - Simulation with animations fixed
+# engine/simulation.py - Updated with cover system
 """
 SurvAIval Simulation Controller
-Complete version with animation system properly integrated
+Complete version with animation system and cover system
 """
 
 import pygame
@@ -14,6 +14,7 @@ from agents.wolf import Wolf
 from agents.deer import Deer
 from agents.bear import Bear
 from environment.food_system import FoodManager
+from environment.cover_system import CoverManager  # 🌳 IMPORT COVER SYSTEM
 from utils.animation import init_animations, get_animation_manager
 
 
@@ -35,13 +36,23 @@ class Simulation:
         self.agents = []
         self.dead_agents = []
 
-        # Food system
-        self.food_manager = FoodManager()
-        self.food_manager.initialize_food_sources(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+        # 🎥 Camera system
+        self.camera_x = 0
+        self.camera_y = 0
+        self.camera_target = None  # Follow this agent
 
-        # Animation system - CRITICAL: Load before creating agents
+        # Animation system - Load before creating agents
         print("🎬 Initializing animation system...")
         self.animation_manager = init_animations()
+
+        # 🌳 Cover system - Initialize BEFORE food system
+        print("🌳 Initializing cover system...")
+        self.cover_manager = CoverManager()
+        self.cover_manager.initialize_cover(config.WORLD_WIDTH, config.WORLD_HEIGHT)
+
+        # Food system
+        self.food_manager = FoodManager()
+        self.food_manager.initialize_food_sources(config.WORLD_WIDTH, config.WORLD_HEIGHT)
 
         # Q-Learning system
         self.learning_timer = 0
@@ -59,7 +70,7 @@ class Simulation:
         # Initialize agents AFTER animation system
         self._create_initial_agents()
 
-        print("✅ Simulation initialized with animated predator-prey ecosystem!")
+        print("✅ Simulation initialized with animated ecosystem and cover system!")
 
     def _create_initial_agents(self):
         """Create initial population of agents with animations"""
@@ -71,8 +82,8 @@ class Simulation:
         # Create rabbits with animations
         for i in range(config.INITIAL_RABBITS):
             pos = [
-                random.randint(50, config.SCREEN_WIDTH - 50),
-                random.randint(50, config.SCREEN_HEIGHT - 50)
+                random.randint(50, config.WORLD_WIDTH - 50),
+                random.randint(50, config.WORLD_HEIGHT - 50)
             ]
             rabbit = Rabbit(pos)
 
@@ -87,8 +98,8 @@ class Simulation:
         # Create wolves with animations
         for i in range(config.INITIAL_WOLVES):
             pos = [
-                random.randint(100, config.SCREEN_WIDTH - 100),
-                random.randint(100, config.SCREEN_HEIGHT - 100)
+                random.randint(100, config.WORLD_WIDTH - 100),
+                random.randint(100, config.WORLD_HEIGHT - 100)
             ]
             wolf = Wolf(pos)
 
@@ -103,8 +114,8 @@ class Simulation:
         # Create deer
         for i in range(config.INITIAL_DEER):
             position = [
-                random.randint(60, config.SCREEN_WIDTH - 60),
-                random.randint(60, config.SCREEN_HEIGHT - 60)
+                random.randint(60, config.WORLD_WIDTH - 60),
+                random.randint(60, config.WORLD_HEIGHT - 60)
             ]
             deer = Deer(position)
 
@@ -119,8 +130,8 @@ class Simulation:
         # Create bears
         for i in range(config.INITIAL_BEARS):
             position = [
-                random.randint(150, config.SCREEN_WIDTH - 150),
-                random.randint(150, config.SCREEN_HEIGHT - 150)
+                random.randint(150, config.WORLD_WIDTH - 150),
+                random.randint(150, config.WORLD_HEIGHT - 150)
             ]
             bear = Bear(position)
 
@@ -131,7 +142,6 @@ class Simulation:
 
             self.agents.append(bear)
             self.stats['total_born'] += 1
-
 
         deer_count = len([a for a in self.agents if a.agent_type == 'deer'])
         bear_count = len([a for a in self.agents if a.agent_type == 'bear'])
@@ -164,6 +174,31 @@ class Simulation:
                 elif event.key == pygame.K_b:
                     self._add_random_bear()
 
+                elif event.key == pygame.K_c:
+                    # Toggle camera follow mode
+                    if self.camera_target is None:
+                        # Follow first rabbit
+                        rabbits = [a for a in self.agents if a.agent_type == 'rabbit']
+                        if rabbits:
+                            self.camera_target = rabbits[0]
+                            print(f"📹 Camera following {self.camera_target.id}")
+                    else:
+                        self.camera_target = None
+                        print("📹 Camera free")
+
+                elif event.key == pygame.K_v:
+                    # Cycle through animals to follow
+                    if self.agents:
+                        if self.camera_target is None:
+                            self.camera_target = self.agents[0]
+                        else:
+                            current_idx = self.agents.index(
+                                self.camera_target) if self.camera_target in self.agents else -1
+                            next_idx = (current_idx + 1) % len(self.agents)
+                            self.camera_target = self.agents[next_idx]
+
+                        print(f"📹 Camera following {self.camera_target.agent_type} {self.camera_target.id}")
+
                 elif event.key == pygame.K_i:
                     is_enabled = not Deer.learning_enabled
                     Deer.enable_learning(is_enabled)
@@ -172,58 +207,36 @@ class Simulation:
                     is_enabled = not Bear.learning_enabled
                     Bear.enable_learning(is_enabled)
 
-
                 elif event.key == pygame.K_l:
-
                     # Toggle rabbit learning
-
                     is_enabled = not Rabbit.learning_enabled
-
                     Rabbit.enable_learning(is_enabled)
-
                     self.stats['learning_enabled'] = is_enabled
 
-
-                elif event.key == pygame.K_o:  # NEW - O button wolf learning
-
+                elif event.key == pygame.K_o:
                     # Toggle wolf learning
-
                     is_enabled = not Wolf.learning_enabled
-
                     Wolf.enable_learning(is_enabled)
-
                     self.stats['wolf_learning_enabled'] = is_enabled
 
-
                 elif event.key == pygame.K_s:
-
                     # Save Q-tables
-
                     if Rabbit.learning_enabled:
                         Rabbit.save_learning()
-
                     if Wolf.learning_enabled:
                         Wolf.save_learning()
-
                     if Deer.learning_enabled:
                         Deer.save_learning()
-
                     if Bear.learning_enabled:
                         Bear.save_learning()
 
-
                 elif event.key == pygame.K_k:
-
                     # Load Q-tables
-
                     if Rabbit.learning_enabled or Rabbit.shared_q_agent:
                         Rabbit.enable_learning(True)
-
                         Rabbit.load_learning()
-
                     if Wolf.learning_enabled or Wolf.shared_q_agent:
                         Wolf.enable_learning(True)
-
                         Wolf.load_learning()
 
                 elif event.key == pygame.K_p:
@@ -242,16 +255,21 @@ class Simulation:
 
                 elif event.key == pygame.K_f:
                     mouse_pos = pygame.mouse.get_pos()
+                    # Adjust for camera offset
+                    world_pos = [
+                        mouse_pos[0] + self.camera_x,
+                        mouse_pos[1] + self.camera_y
+                    ]
                     from environment.food_system import FoodSource
-                    food = FoodSource(mouse_pos, "grass")
+                    food = FoodSource(world_pos, "grass")
                     self.food_manager.food_sources.append(food)
-                    print(f"🌱 Spawned grass at mouse position")
+                    print(f"🌱 Spawned grass at {world_pos}")
 
     def _add_random_rabbit(self):
         """Add a new rabbit with animation"""
         pos = [
-            random.randint(50, config.SCREEN_WIDTH - 50),
-            random.randint(50, config.SCREEN_HEIGHT - 50)
+            random.randint(50, config.WORLD_WIDTH - 50),
+            random.randint(50, config.WORLD_HEIGHT - 50)
         ]
         rabbit = Rabbit(pos)
 
@@ -268,8 +286,8 @@ class Simulation:
     def _add_random_wolf(self):
         """Add a new wolf with animation"""
         pos = [
-            random.randint(100, config.SCREEN_WIDTH - 100),
-            random.randint(100, config.SCREEN_HEIGHT - 100)
+            random.randint(100, config.WORLD_WIDTH - 100),
+            random.randint(100, config.WORLD_HEIGHT - 100)
         ]
         wolf = Wolf(pos)
 
@@ -286,8 +304,8 @@ class Simulation:
     def _add_random_deer(self):
         """Add a new deer at random position"""
         position = [
-            random.randint(60, config.SCREEN_WIDTH - 60),
-            random.randint(60, config.SCREEN_HEIGHT - 60)
+            random.randint(60, config.WORLD_WIDTH - 60),
+            random.randint(60, config.WORLD_HEIGHT - 60)
         ]
         deer = Deer(position)
 
@@ -304,8 +322,8 @@ class Simulation:
     def _add_random_bear(self):
         """Add a new bear at random position"""
         position = [
-            random.randint(150, config.SCREEN_WIDTH - 150),
-            random.randint(150, config.SCREEN_HEIGHT - 150)
+            random.randint(150, config.WORLD_WIDTH - 150),
+            random.randint(150, config.WORLD_HEIGHT - 150)
         ]
         bear = Bear(position)
 
@@ -323,8 +341,15 @@ class Simulation:
         """Reset the simulation to initial state"""
         self.agents.clear()
         self.dead_agents.clear()
+
+        # Reinitialize cover system
+        self.cover_manager = CoverManager()
+        self.cover_manager.initialize_cover(config.WORLD_WIDTH, config.WORLD_HEIGHT)
+
+        # Reinitialize food system
         self.food_manager = FoodManager()
-        self.food_manager.initialize_food_sources(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+        self.food_manager.initialize_food_sources(config.WORLD_WIDTH, config.WORLD_HEIGHT)
+
         self.stats = {
             'total_born': 0,
             'total_died': 0,
@@ -334,12 +359,33 @@ class Simulation:
         }
         self._create_initial_agents()
 
+    def _update_camera(self):
+        """Update camera position"""
+        if self.camera_target and self.camera_target.is_alive:
+            # Smooth follow
+            target_x = self.camera_target.position[0] - config.SCREEN_WIDTH // 2
+            target_y = self.camera_target.position[1] - config.SCREEN_HEIGHT // 2
+
+            # Smooth interpolation
+            self.camera_x += (target_x - self.camera_x) * config.CAMERA_SMOOTHING
+            self.camera_y += (target_y - self.camera_y) * config.CAMERA_SMOOTHING
+        else:
+            # Free camera or target dead
+            self.camera_target = None
+
+        # Clamp camera to world bounds
+        self.camera_x = max(0, min(self.camera_x, config.WORLD_WIDTH - config.SCREEN_WIDTH))
+        self.camera_y = max(0, min(self.camera_y, config.WORLD_HEIGHT - config.SCREEN_HEIGHT))
+
     def update(self):
         """Update simulation state"""
         if self.paused:
             return
 
-        # Update animation system - IMPORTANT
+        # Update camera
+        self._update_camera()
+
+        # Update animation system
         self.animation_manager.update_all()
 
         # Learning updates
@@ -360,14 +406,14 @@ class Simulation:
             if self.learning_timer % self.learning_save_interval == 0:
                 Wolf.save_learning()
 
-            # Deer learning updates
+        # Deer learning updates
         if Deer.learning_enabled:
             if self.learning_timer % 60 == 0:
                 Deer.decay_exploration()
             if self.learning_timer % self.learning_save_interval == 0:
                 Deer.save_learning()
 
-            # Bear learning updates
+        # Bear learning updates
         if Bear.learning_enabled:
             if self.learning_timer % 60 == 0:
                 Bear.decay_exploration()
@@ -375,7 +421,7 @@ class Simulation:
                 Bear.save_learning()
 
         # Update food system
-        self.food_manager.update(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+        self.food_manager.update(config.WORLD_WIDTH, config.WORLD_HEIGHT)
 
         # Update all agents
         for agent in self.agents[:]:
@@ -406,20 +452,34 @@ class Simulation:
 
     def render(self):
         """Render the simulation"""
+        # Fill background
         self.screen.fill(config.GREEN)
 
-        # Render food sources
-        self.food_manager.draw_all(self.screen)
+        camera_offset = (self.camera_x, self.camera_y)
 
-        # Render agents (herbivores first, then predators)
+        # 🌳 CRITICAL: Render cover objects FIRST (background layer)
+        self.cover_manager.draw_all(self.screen, camera_offset)
+
+        # Render food sources
+        self.food_manager.draw_all(self.screen, camera_offset)
+
+        # Render agents (herbivores first, then predators for proper layering)
         herbivores = [a for a in self.agents if a.agent_type in ['rabbit', 'deer']]
         predators = [a for a in self.agents if a.agent_type in ['wolf', 'bear']]
 
         for agent in herbivores + predators:
-            agent.draw(self.screen)
+            agent.draw(self.screen, camera_offset)
 
         # Render UI
         self._render_ui()
+
+        # Draw camera target indicator
+        if self.camera_target and self.camera_target.is_alive:
+            target_screen_pos = (
+                int(self.camera_target.position[0] - self.camera_x),
+                int(self.camera_target.position[1] - self.camera_y)
+            )
+            pygame.draw.circle(self.screen, (255, 255, 0), target_screen_pos, 40, 2)
 
         pygame.display.flip()
 
@@ -438,6 +498,8 @@ class Simulation:
             "E: Add deer",
             "B: Add bear",
             "F: Spawn food",
+            "C: Toggle camera",
+            "V: Cycle camera",
             "L: Toggle rabbit learning",
             "O: Toggle wolf learning",
             "I: Toggle deer learning",
@@ -462,6 +524,7 @@ class Simulation:
         deer_count = self.get_agent_count_by_type('deer')
         bear_count = self.get_agent_count_by_type('bear')
         food_stats = self.food_manager.get_statistics()
+        cover_stats = self.cover_manager.get_statistics()  # 🌳 Get cover stats
 
         if wolf_count > 0:
             ratio = rabbit_count / wolf_count
@@ -479,15 +542,21 @@ class Simulation:
             f"Grass: {food_stats.get('grass_count', 0)}",
             f"Berries: {food_stats.get('berry_count', 0)}",
             "",
+            f"🌳 Cover: {cover_stats['total_cover']}",  # 🌳 NEW
+            f"Trees: {cover_stats['trees']}",  # 🌳 NEW
+            f"Bushes: {cover_stats['bushes']}",  # 🌳 NEW
+            f"Rocks: {cover_stats['rocks']}",  # 🌳 NEW
+            "",
             f"Total Born: {self.stats['total_born']}",
             f"Total Died: {self.stats['total_died']}",
             f"Rabbits Eaten: {self.stats['rabbits_eaten']}",
             "",
-            f"FPS: {int(self.clock.get_fps())}"
+            f"FPS: {int(self.clock.get_fps())}",
             f"🧠 Learning: {'ON' if Rabbit.learning_enabled else 'OFF'}",
             f"🐺 Wolf Learning: {'ON' if Wolf.learning_enabled else 'OFF'}",
             f"🦌 Deer Learning: {'ON' if Deer.learning_enabled else 'OFF'}",
             f"🐻 Bear Learning: {'ON' if Bear.learning_enabled else 'OFF'}",
+            f"📹 Camera: {'Following' if self.camera_target else 'Free'}",
             f"Status: {'PAUSED' if self.paused else 'RUNNING'}"
         ]
 
@@ -511,10 +580,10 @@ class Simulation:
                     f"W Pack Hunts: {wolf_stats['pack_hunts']}",
                 ])
 
-        x_pos = config.SCREEN_WIDTH - 220
+        x_pos = config.SCREEN_WIDTH - 250
         y_offset = 50
 
-        stats_bg = pygame.Surface((210, len(stats) * 20 + 10))
+        stats_bg = pygame.Surface((240, len(stats) * 20 + 10))
         stats_bg.set_alpha(128)
         stats_bg.fill(config.BLACK)
         self.screen.blit(stats_bg, (x_pos - 10, y_offset - 5))
@@ -557,8 +626,8 @@ class Simulation:
 
     def run(self):
         """Main simulation loop"""
-        print("🚀 Starting animated predator-prey simulation...")
-        print("📝 Controls: SPACE=Rabbit, W=Wolf, E=Deer, B=Bear, F=Food, P=Pause, D=Debug, R=Reset")
+        print("🚀 Starting animated predator-prey simulation with cover system...")
+        print("📝 Controls: SPACE=Rabbit, W=Wolf, E=Deer, B=Bear, F=Food, C=Camera, P=Pause, D=Debug, R=Reset")
 
         while self.running:
             self.handle_events()

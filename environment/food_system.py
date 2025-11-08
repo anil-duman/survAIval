@@ -112,17 +112,18 @@ class FoodSource:
             intensity = self.nutrition_value / self.max_nutrition
             return tuple(int(c * (0.3 + 0.7 * intensity)) for c in base_color)
 
-    def draw(self, screen):
+    def draw(self, screen, camera_offset=(0, 0)):  # ← Parametre ekle
         """Draw the food source"""
         if self.is_depleted and self.respawn_timer > self.growth_rate * 0.7:
-            # Don't draw if recently depleted
             return
 
-        pos = (int(self.position[0]), int(self.position[1]))
+        # Camera offset
+        pos = (int(self.position[0] - camera_offset[0]),
+               int(self.position[1] - camera_offset[1]))
+
         color = self.get_color()
 
         if self.food_type == 'grass':
-            # Draw grass as small rectangles
             for i in range(3):
                 offset_x = random.randint(-3, 3)
                 offset_y = random.randint(-2, 2)
@@ -130,15 +131,12 @@ class FoodSource:
                 pygame.draw.rect(screen, color, (grass_pos[0] - 1, grass_pos[1] - 3, 2, 6))
 
         elif self.food_type == 'berry':
-            # Draw berries as small circles
             pygame.draw.circle(screen, color, pos, self.size)
             pygame.draw.circle(screen, (0, 0, 0), pos, self.size, 1)
 
         else:
-            # Default: circle
             pygame.draw.circle(screen, color, pos, self.size)
             pygame.draw.circle(screen, (0, 0, 0), pos, self.size, 1)
-
 
 class FoodManager:
     """Manages all food sources in the ecosystem"""
@@ -281,10 +279,10 @@ class FoodManager:
 
         return total_nutrition
 
-    def draw_all(self, screen):
+    def draw_all(self, screen, camera_offset=(0, 0)):
         """Draw all food sources"""
         for food in self.food_sources:
-            food.draw(screen)
+            food.draw(screen, camera_offset)  # ← camera_offset
 
     def get_statistics(self):
         """Get food system statistics"""
