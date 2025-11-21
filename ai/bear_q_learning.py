@@ -11,6 +11,7 @@ import pickle
 import os
 
 
+
 class BearQLearningAgent:
     """Q-Learning agent specialized for bear territorial behavior"""
 

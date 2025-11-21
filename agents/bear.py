@@ -15,6 +15,7 @@ from utils.animation import AnimatedSprite
 # Import Q-Learning
 try:
     from ai.bear_q_learning import BearQLearningAgent
+
     BEAR_Q_LEARNING_AVAILABLE = True
 except ImportError:
     BEAR_Q_LEARNING_AVAILABLE = False
@@ -40,9 +41,31 @@ class Bear(BaseAgent):
         elif not enable:
             print("🔒 Bear Q-Learning disabled")
 
-
-
         return True
+
+    @classmethod
+    def save_learning(cls, filepath="data/bear_q_table.pkl"):
+        if cls.shared_q_agent:
+            cls.shared_q_agent.save_q_table(filepath)
+            cls.shared_q_agent.print_best_policies(5)
+
+    @classmethod
+    def load_learning(cls, filepath="data/bear_q_table.pkl"):
+        if cls.shared_q_agent:
+            return cls.shared_q_agent.load_q_table(filepath)
+        return False
+
+    @classmethod
+    def get_learning_stats(cls):
+        if cls.shared_q_agent:
+            return cls.shared_q_agent.get_statistics()
+        return None
+
+    @classmethod
+    def decay_exploration(cls):
+        if cls.shared_q_agent:
+            cls.shared_q_agent.decay_exploration()
+
     def __init__(self, position):
         """Initialize bear agent
 
@@ -136,8 +159,7 @@ class Bear(BaseAgent):
                         self.hunting_timer = 40
 
                         if self.animated_sprite:
-                            self.animated_sprite.play_animation(
-                                'attack' if hasattr(self.animated_sprite.animations, 'attack') else 'walk', reset=True)
+                            self.animated_sprite.play_animation('attack', reset=True)
 
                         return {
                             'type': 'hunt',
@@ -170,7 +192,6 @@ class Bear(BaseAgent):
                     if self.animated_sprite:
                         self.animated_sprite.play_animation('walk')
 
-                    # Chase away the intruder
                     return {
                         'type': 'chase',
                         'target_position': bear.position
@@ -247,6 +268,20 @@ class Bear(BaseAgent):
         if self.animated_sprite:
             self.animated_sprite.set_flip(not self.facing_right)
 
+            # Animation management
+            if not self.is_alive:
+                if self.animated_sprite.current_animation != 'death':
+                    self.animated_sprite.play_animation('death', reset=True)
+            elif self.hunting_timer > 0 and self.current_state == "attacking":
+                if self.animated_sprite.current_animation != 'attack':
+                    self.animated_sprite.play_animation('attack', reset=True)
+            else:
+                speed = np.linalg.norm(self.velocity)
+                if speed < 0.3:
+                    self.animated_sprite.play_animation('idle')
+                else:
+                    self.animated_sprite.play_animation('walk')
+
     def _execute_action(self, action, world):
         """Override to add bear-specific actions"""
         if not action:
@@ -262,12 +297,16 @@ class Bear(BaseAgent):
             super()._execute_action(action, world)
 
     def _hunt_target(self, target, world):
-        """Override hunting behavior for bears"""
+        """Override hunting behavior for bears with attack animation"""
         distance = np.linalg.norm(self.position - target.position)
 
         self._seek_target(target.position)
 
         if distance < self.attack_distance:
+            # Trigger attack animation
+            if self.animated_sprite:
+                self.animated_sprite.play_animation('attack', reset=True)
+
             # Bears are very successful hunters
             base_chance = 0.6
             energy_bonus = (self.energy / self.max_energy) * 0.2
@@ -278,12 +317,24 @@ class Bear(BaseAgent):
                 # Massive energy gain from kill
                 energy_gain = min(target.energy * 0.9, self.max_energy - self.energy)
                 self.energy += energy_gain
+
+                # Trigger death animation on target
+                if hasattr(target, 'animated_sprite') and target.animated_sprite:
+                    target.animated_sprite.play_animation('death', reset=True)
+
                 target._die("hunted")
 
-                self.last_kill_timer = 240  # Satisfied for longer
+                self.last_kill_timer = 240
                 print(f"🐻 {self.id} killed {target.agent_type} {target.id}! Energy: {self.energy:.1f}")
             else:
                 self.energy -= 8
+
+    def _die(self, cause="natural"):
+        """Handle death with animation"""
+        if self.animated_sprite:
+            self.animated_sprite.play_animation('death', reset=True)
+
+        super()._die(cause)
 
     def _find_prey(self, prey_list):
         """Find available prey (everything is prey for bears)"""
@@ -378,8 +429,8 @@ class Bear(BaseAgent):
         """Create new bear offspring"""
         offspring_pos = position + np.random.normal(0, 20, 2)
 
-        offspring_pos[0] = max(25, min(config.SCREEN_WIDTH - 25, offspring_pos[0]))
-        offspring_pos[1] = max(25, min(config.SCREEN_HEIGHT - 25, offspring_pos[1]))
+        offspring_pos[0] = max(25, min(config.WORLD_WIDTH - 25, offspring_pos[0]))
+        offspring_pos[1] = max(25, min(config.WORLD_HEIGHT - 25, offspring_pos[1]))
 
         new_bear = Bear(offspring_pos)
 
@@ -417,29 +468,9 @@ class Bear(BaseAgent):
 
         # Debug: show territory
         if getattr(config, 'DEBUG_MODE', False) and self.territory_established:
-            territory_pos = (int(self.territory_center[0]), int(self.territory_center[1]))
+            territory_pos = (int(self.territory_center[0] - camera_offset[0]),
+                             int(self.territory_center[1] - camera_offset[1]))
             pygame.draw.circle(screen, (255, 100, 0), territory_pos, int(self.territorial_radius), 2)
             pygame.draw.line(screen, (255, 150, 0), pos, territory_pos, 1)
 
-            @classmethod
-            def save_learning(cls, filepath="data/bear_q_table.pkl"):
-                if cls.shared_q_agent:
-                    cls.shared_q_agent.save_q_table(filepath)
-                    cls.shared_q_agent.print_best_policies(5)
-
-            @classmethod
-            def load_learning(cls, filepath="data/bear_q_table.pkl"):
-                if cls.shared_q_agent:
-                    return cls.shared_q_agent.load_q_table(filepath)
-                return False
-
-            @classmethod
-            def get_learning_stats(cls):
-                if cls.shared_q_agent:
-                    return cls.shared_q_agent.get_statistics()
-                return None
-
-            @classmethod
-            def decay_exploration(cls):
-                if cls.shared_q_agent:
-                    cls.shared_q_agent.decay_exploration()
+# FILE ENDS HERE - NO MORE CODE AFTER THIS!

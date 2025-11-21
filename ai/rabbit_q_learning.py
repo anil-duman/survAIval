@@ -11,7 +11,7 @@ import pickle
 import os
 
 
-class RabbitQLearningAgent:
+class QLearningAgent:
     """Q-Learning agent for decision making"""
 
     def __init__(self, learning_rate: float = 0.1, discount_factor: float = 0.95,
